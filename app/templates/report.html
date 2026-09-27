@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ report.title }}</title>
+    <link rel="stylesheet" href="/static/report.css">
+</head>
+<body>
+    <main class="report-shell">
+        <header class="report-header">
+            <div>
+                <p class="eyebrow">Cyber Threat Intelligence</p>
+                <h1>{{ report.title }}</h1>
+                <p class="hash mono">{{ report.artifact.requested_hash }}</p>
+            </div>
+            <div class="classification">{{ report.classification }}</div>
+        </header>
+
+        <section class="metadata-grid" aria-label="Metadados do relatório">
+            <article>
+                <span>Report ID</span>
+                <strong class="mono">{{ report.report_id }}</strong>
+            </article>
+            <article>
+                <span>Status</span>
+                <strong>{{ report.status }}</strong>
+            </article>
+            <article>
+                <span>Veredito</span>
+                <strong class="verdict verdict-{{ report.verdict }}">
+                    {{ report.verdict }}
+                </strong>
+            </article>
+            <article>
+                <span>Confiança</span>
+                <strong>{{ report.confidence }}</strong>
+            </article>
+            <article>
+                <span>Gerado em</span>
+                <strong>{{ report.generated_at.isoformat() }}</strong>
+            </article>
+            <article>
+                <span>Motor analítico</span>
+                <strong>{{ report.analysis_execution.engine }}</strong>
+            </article>
+        </section>
+
+        <section class="section summary">
+            <h2>1. Resumo executivo</h2>
+            <p>{{ report.executive_summary }}</p>
+        </section>
+
+        <section class="section">
+            <h2>2. Priority Intelligence Requirements</h2>
+            <div class="cards">
+                {% for pir in report.intelligence_requirements %}
+                <article class="card">
+                    <div class="card-heading">
+                        <strong>{{ pir.pir_id }}</strong>
+                        <span class="badge">{{ pir.status }}</span>
+                    </div>
+                    <h3>{{ pir.question }}</h3>
+                    <p>{{ pir.assessment }}</p>
+                    <p class="muted">
+                        Confiança: {{ pir.confidence }}
+                        {% if pir.evidence_ids %}
+                        · Evidências: {{ pir.evidence_ids | join(", ") }}
+                        {% endif %}
+                    </p>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>3. Perfil do artefato</h2>
+            <div class="table-wrap">
+                <table>
+                    <tbody>
+                        {% for algorithm, value in report.artifact.hashes.items() %}
+                        <tr>
+                            <th>{{ algorithm | upper }}</th>
+                            <td class="mono breakable">{{ value }}</td>
+                        </tr>
+                        {% endfor %}
+                        <tr>
+                            <th>Nomes conhecidos</th>
+                            <td>
+                                {{ report.artifact.filenames | join(", ")
+                                   if report.artifact.filenames else "Não disponível" }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Tipos</th>
+                            <td>
+                                {{ report.artifact.file_types | join(", ")
+                                   if report.artifact.file_types else "Não disponível" }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Tamanhos</th>
+                            <td>
+                                {{ report.artifact.file_sizes | join(", ")
+                                   if report.artifact.file_sizes else "Não disponível" }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Tags</th>
+                            <td>
+                                {{ report.artifact.tags | join(", ")
+                                   if report.artifact.tags else "Não disponível" }}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>First seen</th>
+                            <td>{{ report.artifact.first_seen or "Não disponível" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Last seen</th>
+                            <td>{{ report.artifact.last_seen or "Não disponível" }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>4. Fontes consultadas</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fonte</th>
+                            <th>Status</th>
+                            <th>Coleta</th>
+                            <th>Erro</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for provider in report.providers %}
+                        <tr>
+                            <td>{{ provider.provider }}</td>
+                            <td>{{ provider.status }}</td>
+                            <td>{{ provider.fetched_at.isoformat() }}</td>
+                            <td>{{ provider.error or "—" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>5. Hipóteses de família</h2>
+            {% if report.family_candidates %}
+            <div class="cards">
+                {% for candidate in report.family_candidates %}
+                <article class="card">
+                    <div class="card-heading">
+                        <h3>{{ candidate.family }}</h3>
+                        <span class="badge">{{ candidate.confidence }}</span>
+                    </div>
+                    <p>{{ candidate.rationale }}</p>
+                    <p class="muted">
+                        Suporte: {{ candidate.supporting_evidence_ids | join(", ") }}
+                    </p>
+                    {% if candidate.contradicting_evidence_ids %}
+                    <p class="muted">
+                        Contradições:
+                        {{ candidate.contradicting_evidence_ids | join(", ") }}
+                    </p>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty">Nenhuma família sustentada pelas evidências.</p>
+            {% endif %}
+        </section>
+
+        <section class="section">
+            <h2>6. Observáveis</h2>
+            {% if report.observables %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tipo</th>
+                            <th>Valor</th>
+                            <th>Fonte</th>
+                            <th>Relacionamento</th>
+                            <th>Confiança</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for observable in report.observables %}
+                        <tr>
+                            <td>{{ observable.type }}</td>
+                            <td class="mono breakable">{{ observable.value }}</td>
+                            <td>{{ observable.source }}</td>
+                            <td>{{ observable.relationship or "—" }}</td>
+                            <td>{{ observable.confidence }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="empty">Nenhum observável relacionado foi coletado.</p>
+            {% endif %}
+        </section>
+
+        <section class="section">
+            <h2>7. Infraestrutura e avaliação de C2</h2>
+            {% if report.infrastructure %}
+            <div class="cards">
+                {% for item in report.infrastructure %}
+                <article class="card">
+                    <div class="card-heading">
+                        <strong class="mono breakable">
+                            {{ item.observable.value }}
+                        </strong>
+                        <span class="badge">{{ item.classification }}</span>
+                    </div>
+                    <p>{{ item.rationale }}</p>
+                    <p class="muted">
+                        Tipo: {{ item.observable.type }} ·
+                        Fonte: {{ item.observable.source }}
+                        {% if item.evidence_ids %}
+                        · Evidências: {{ item.evidence_ids | join(", ") }}
+                        {% endif %}
+                    </p>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty">Sem infraestrutura relacionada disponível.</p>
+            {% endif %}
+        </section>
+
+        <section class="section">
+            <h2>8. MITRE ATT&amp;CK</h2>
+            {% if report.ttps %}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Técnica</th>
+                            <th>Nome</th>
+                            <th>Confiança</th>
+                            <th>Evidências</th>
+                            <th>Justificativa</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ttp in report.ttps %}
+                        <tr>
+                            <td class="mono">{{ ttp.technique_id }}</td>
+                            <td>{{ ttp.technique_name }}</td>
+                            <td>{{ ttp.confidence }}</td>
+                            <td>{{ ttp.evidence_ids | join(", ") }}</td>
+                            <td>{{ ttp.rationale }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="empty">Nenhuma técnica foi sustentada após o grounding.</p>
+            {% endif %}
+        </section>
+
+        <section class="section">
+            <h2>9. Threat hunting</h2>
+            {% if report.hunting_hypotheses %}
+            <h3>Hipóteses analíticas</h3>
+            <ul>
+                {% for hypothesis in report.hunting_hypotheses %}
+                <li>{{ hypothesis }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            <div class="cards">
+                {% for item in report.hunting_checklist %}
+                <article class="card">
+                    <div class="card-heading">
+                        <strong>{{ item.data_source }}</strong>
+                        <span class="badge">{{ item.priority }}</span>
+                    </div>
+                    <h3>{{ item.objective }}</h3>
+                    <p>{{ item.procedure }}</p>
+                    <p class="muted">Evidências esperadas:</p>
+                    <ul>
+                        {% for evidence in item.expected_evidence %}
+                        <li>{{ evidence }}</li>
+                        {% endfor %}
+                    </ul>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>10. Recomendações e MITRE D3FEND</h2>
+            {% if report.recommendations %}
+            <div class="cards">
+                {% for recommendation in report.recommendations %}
+                <article class="card">
+                    <div class="card-heading">
+                        <strong>{{ recommendation.priority }} · {{ recommendation.phase }}</strong>
+                        {% if recommendation.d3fend_id %}
+                        <span class="badge">{{ recommendation.d3fend_id }}</span>
+                        {% endif %}
+                    </div>
+                    <h3>{{ recommendation.action }}</h3>
+                    <p>{{ recommendation.rationale }}</p>
+                    <p class="muted">
+                        Validação: {{ recommendation.validation }}
+                    </p>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty">Nenhuma recomendação estruturada disponível.</p>
+            {% endif %}
+        </section>
+
+        <section class="section">
+            <h2>11. Execução da análise</h2>
+            <div class="table-wrap">
+                <table>
+                    <tbody>
+                        <tr><th>Solicitada</th><td>{{ report.analysis_execution.requested }}</td></tr>
+                        <tr><th>Executada</th><td>{{ report.analysis_execution.attempted }}</td></tr>
+                        <tr><th>Sucesso</th><td>{{ report.analysis_execution.succeeded }}</td></tr>
+                        <tr><th>Motor</th><td>{{ report.analysis_execution.engine }}</td></tr>
+                        <tr><th>Provedor</th><td>{{ report.analysis_execution.provider or "—" }}</td></tr>
+                        <tr><th>Modelo</th><td>{{ report.analysis_execution.model or "—" }}</td></tr>
+                        <tr><th>Fallback</th><td>{{ report.analysis_execution.fallback_used }}</td></tr>
+                        <tr><th>Input tokens</th><td>{{ report.analysis_execution.usage.input_tokens }}</td></tr>
+                        <tr><th>Output tokens</th><td>{{ report.analysis_execution.usage.output_tokens }}</td></tr>
+                        <tr><th>Total tokens</th><td>{{ report.analysis_execution.usage.total_tokens }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>12. Limitações e caveats</h2>
+            <ul>
+                {% for limitation in report.limitations %}
+                <li>{{ limitation }}</li>
+                {% endfor %}
+            </ul>
+        </section>
+
+        <section class="section">
+            <h2>13. Metodologia</h2>
+            <ol>
+                {% for step in report.methodology %}
+                <li>{{ step }}</li>
+                {% endfor %}
+            </ol>
+        </section>
+
+        <section class="section page-break">
+            <h2>14. Apêndice de evidências</h2>
+            {% if report.evidence %}
+            <div class="evidence-list">
+                {% for evidence in report.evidence %}
+                <article class="evidence-item">
+                    <div class="card-heading">
+                        <strong>{{ evidence.id }} · {{ evidence.kind }}</strong>
+                        <span class="badge">{{ evidence.source }}</span>
+                    </div>
+                    <p class="muted">
+                        Fato observado: {{ evidence.observed }}
+                    </p>
+                    <pre>{{ evidence.value | json_pretty }}</pre>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty">Nenhuma evidência armazenada.</p>
+            {% endif %}
+        </section>
+
+        <footer>
+            <p>
+                Relatório gerado automaticamente a partir de evidências
+                normalizadas. Decisões de contenção devem ser validadas por
+                um analista responsável.
+            </p>
+        </footer>
+    </main>
+</body>
+</html>

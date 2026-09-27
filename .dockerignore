@@ -1,0 +1,13 @@
+.env
+.git
+.gitignore
+.pytest_cache
+.venv
+__pycache__
+*.py[cod]
+*.sqlite
+*.sqlite3
+*.db
+data/
+tests/
+cti-triage-*.zip
