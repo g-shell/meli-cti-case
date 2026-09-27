@@ -1,0 +1,16 @@
+services:
+  cti-triage:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cti-triage
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - cti_data:/app/data
+
+volumes:
+  cti_data:

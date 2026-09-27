@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CTI Triage Console</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <script src="/static/app.js" defer></script>
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <p class="eyebrow">Malware Intelligence</p>
+            <h1>CTI Triage Console</h1>
+        </div>
+        <nav aria-label="Links da aplicação">
+            <a href="/docs" target="_blank" rel="noreferrer">Swagger</a>
+            <a href="/redoc" target="_blank" rel="noreferrer">ReDoc</a>
+            <a href="/api/v1/health" target="_blank" rel="noreferrer">Health</a>
+        </nav>
+    </header>
+
+    <main class="layout">
+        <section class="panel hero-panel">
+            <div>
+                <p class="eyebrow">Nova análise</p>
+                <h2>Investigue um hash</h2>
+                <p class="muted">
+                    Consulte VirusTotal e MalwareBazaar, aplique análise
+                    determinística e, opcionalmente, GenAI com grounding.
+                </p>
+            </div>
+
+            <form id="triage-form">
+                <label for="artifact-hash">MD5, SHA-1 ou SHA-256</label>
+                <input
+                    id="artifact-hash"
+                    name="hash"
+                    type="text"
+                    spellcheck="false"
+                    autocomplete="off"
+                    minlength="32"
+                    maxlength="64"
+                    required
+                    placeholder="7a8fc48ce4df4448..."
+                >
+
+                <fieldset>
+                    <legend>Provedores</legend>
+                    <label class="check">
+                        <input type="checkbox" name="provider" value="virustotal" checked>
+                        VirusTotal
+                    </label>
+                    <label class="check">
+                        <input type="checkbox" name="provider" value="malwarebazaar" checked>
+                        MalwareBazaar
+                    </label>
+                </fieldset>
+
+                <div class="options">
+                    <label class="check">
+                        <input id="use-genai" type="checkbox" checked>
+                        Usar GenAI
+                    </label>
+                    <label class="check">
+                        <input id="force-refresh" type="checkbox">
+                        Forçar nova coleta
+                    </label>
+                </div>
+
+                <button id="submit-button" type="submit">
+                    Executar triagem
+                </button>
+            </form>
+
+            <div id="request-status" class="status" role="status" aria-live="polite"></div>
+        </section>
+
+        <section class="metrics" aria-label="Estatísticas do repositório">
+            <article class="metric">
+                <span>Total de scans</span>
+                <strong id="metric-scans">—</strong>
+            </article>
+            <article class="metric">
+                <span>Hashes únicos</span>
+                <strong id="metric-hashes">—</strong>
+            </article>
+            <article class="metric">
+                <span>Maliciosos</span>
+                <strong id="metric-malicious">—</strong>
+            </article>
+            <article class="metric">
+                <span>Parciais</span>
+                <strong id="metric-partial">—</strong>
+            </article>
+        </section>
+
+        <section id="result-panel" class="panel hidden">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Resultado atual</p>
+                    <h2>Resumo da triagem</h2>
+                </div>
+                <div id="result-actions" class="actions"></div>
+            </div>
+            <div id="result-summary" class="result-grid"></div>
+            <div id="result-details"></div>
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Investigação</p>
+                    <h2>Buscar observável no histórico</h2>
+                </div>
+            </div>
+            <form id="observable-form" class="inline-form">
+                <input
+                    id="observable-value"
+                    type="text"
+                    maxlength="2048"
+                    required
+                    placeholder="IP, domínio, URL, hash ou fragmento"
+                >
+                <select id="observable-type" aria-label="Tipo do observável">
+                    <option value="">Todos os tipos</option>
+                    <option value="ip">IP</option>
+                    <option value="domain">Domínio</option>
+                    <option value="url">URL</option>
+                    <option value="hash">Hash</option>
+                    <option value="filename">Arquivo</option>
+                    <option value="mutex">Mutex</option>
+                    <option value="registry">Registro</option>
+                </select>
+                <button type="submit">Buscar</button>
+            </form>
+            <div id="observable-results" class="table-container"></div>
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Persistência</p>
+                    <h2>Histórico de scans</h2>
+                </div>
+                <button id="refresh-history" class="secondary" type="button">
+                    Atualizar
+                </button>
+            </div>
+            <div id="history" class="table-container"></div>
+        </section>
+    </main>
+
+    <footer>
+        <p>
+            CTI Triage · Evidências externas devem ser validadas antes de
+            contenção ou bloqueio permanente.
+        </p>
+    </footer>
+</body>
+</html>
