@@ -311,6 +311,7 @@ class PIRAssessment(BaseModel):
 class InfrastructureAssessment(BaseModel):
     observable: Observable
     classification: Literal[
+        "known_infrastructure",
         "related_infrastructure",
         "observed_network_activity",
         "candidate_c2",
@@ -326,6 +327,21 @@ class HuntingChecklistItem(BaseModel):
     objective: str
     procedure: str
     expected_evidence: list[str] = Field(default_factory=list)
+
+
+class DetectionRule(BaseModel):
+    """Regra de detecção gerada a partir dos IOCs ou do comportamento do scan."""
+
+    rule_id: str
+    title: str
+    language: Literal["yara", "sigma", "kql", "eql"]
+    platform: str
+    basis: Literal["ioc", "behavior"]
+    hypothesis: str
+    rationale: str
+    mitre_attack: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+    content: str
 
 
 class CTIReport(BaseModel):
@@ -376,6 +392,9 @@ class CTIReport(BaseModel):
     hunting_checklist: list[HuntingChecklistItem] = Field(
         default_factory=list
     )
+    detection_rules: list[DetectionRule] = Field(
+        default_factory=list
+    )
     recommendations: list[Recommendation] = Field(
         default_factory=list
     )
@@ -405,3 +424,48 @@ class RepositoryStats(BaseModel):
     unique_hashes: int = 0
     status_counts: dict[str, int] = Field(default_factory=dict)
     verdict_counts: dict[str, int] = Field(default_factory=dict)
+
+
+IndicatorType: TypeAlias = Literal[
+    "ip",
+    "domain",
+]
+
+
+class PassiveDNSRecord(BaseModel):
+    """Resolução histórica (IP → domínio ou domínio → IP)."""
+
+    value: str
+    last_resolved: datetime | None = None
+
+
+class IndicatorEnrichment(BaseModel):
+    """Reputação e contexto de um IP ou domínio consultado ao vivo."""
+
+    indicator_type: IndicatorType
+    value: str
+    provider: str = "virustotal"
+    provider_status: ProviderStatus
+    fetched_at: datetime
+    cached: bool = False
+    verdict: Literal[
+        "malicious",
+        "suspicious",
+        "no_detections",
+        "unknown",
+    ] = "unknown"
+    reputation: dict[str, int] = Field(default_factory=dict)
+    known_infrastructure: str | None = None
+    as_owner: str | None = None
+    asn: int | None = None
+    country: str | None = None
+    network: str | None = None
+    registrar: str | None = None
+    creation_date: datetime | None = None
+    categories: dict[str, str] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+    dns_records: list[dict[str, str]] = Field(default_factory=list)
+    resolutions: list[PassiveDNSRecord] = Field(default_factory=list)
+    local_sightings: list[ObservableOccurrence] = Field(
+        default_factory=list
+    )

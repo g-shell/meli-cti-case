@@ -140,6 +140,41 @@
         <section class="panel">
             <div class="section-heading">
                 <div>
+                    <p class="eyebrow">Enriquecimento ao vivo</p>
+                    <h2>Reputação de IP ou domínio</h2>
+                </div>
+            </div>
+            <p class="muted">
+                Consulta o VirusTotal (ASN, registrar, detecções, DNS passivo)
+                e cruza com o histórico local. Aceita IOCs defanged. IPs
+                privados não são enviados a terceiros.
+            </p>
+            <form id="enrich-form" class="inline-form">
+                <select id="enrich-type" aria-label="Tipo do indicador">
+                    <option value="ip">IP</option>
+                    <option value="domain">Domínio</option>
+                </select>
+                <input
+                    id="enrich-value"
+                    type="text"
+                    maxlength="253"
+                    required
+                    spellcheck="false"
+                    autocomplete="off"
+                    placeholder="89.169.54[.]153 ou wi-7-e[.]ru"
+                >
+                <label class="check">
+                    <input id="enrich-refresh" type="checkbox">
+                    Ignorar cache
+                </label>
+                <button type="submit">Enriquecer</button>
+            </form>
+            <div id="enrich-results"></div>
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <div>
                     <p class="eyebrow">Persistência</p>
                     <h2>Histórico de scans</h2>
                 </div>

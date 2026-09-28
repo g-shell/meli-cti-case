@@ -26,6 +26,12 @@ from app.models import (
     TriageResult,
     TTPAssessment,
 )
+from app.services.detection_rules import build_detection_rules
+from app.services.context_filters import (
+    incompatible_evidence_ids,
+    is_known_infrastructure,
+    known_infrastructure_owner,
+)
 
 
 TEMPLATE_DIRECTORY = (
@@ -59,6 +65,7 @@ ReportConfidence: TypeAlias = Literal[
 ]
 
 InfrastructureClassification: TypeAlias = Literal[
+    "known_infrastructure",
     "related_infrastructure",
     "observed_network_activity",
     "candidate_c2",
@@ -267,11 +274,20 @@ def _grounded_ttps(
 
     output: list[TTPAssessment] = []
 
+    # Reaplica o filtro de plataforma para scans persistidos
+    # antes da existência dessa regra no grounding.
+    cross_platform_ids = incompatible_evidence_ids(
+        result.evidence
+    )
+
     for ttp in result.analysis.ttps:
         evidence_ids = [
             evidence_id
             for evidence_id in ttp.evidence_ids
-            if evidence_id in valid_evidence_ids
+            if (
+                evidence_id in valid_evidence_ids
+                and evidence_id not in cross_platform_ids
+            )
         ]
 
         if not evidence_ids:
@@ -329,7 +345,22 @@ def _infrastructure(
 
         classification: InfrastructureClassification
 
-        if key in candidate_keys:
+        owner = (
+            observable.context.get("known_infrastructure")
+            or known_infrastructure_owner(
+                observable.type,
+                observable.value,
+            )
+        )
+
+        if owner:
+            classification = "known_infrastructure"
+            rationale = (
+                f"Infraestrutura de {owner}, contatada rotineiramente "
+                "pelo sistema operacional ou por CDN durante a execução "
+                "em sandbox. Não deve ser bloqueada nem tratada como C2."
+            )
+        elif key in candidate_keys:
             classification = "candidate_c2"
             rationale = (
                 "O indicador foi observado ou relacionado à amostra "
@@ -592,7 +623,10 @@ def _hunting_checklist(
     network_values = [
         observable.value
         for observable in observables
-        if observable.type in NETWORK_OBSERVABLE_TYPES
+        if (
+            observable.type in NETWORK_OBSERVABLE_TYPES
+            and not is_known_infrastructure(observable)
+        )
     ][:20]
 
     items = [
@@ -874,6 +908,10 @@ def build_cti_report(result: TriageResult) -> CTIReport:
         hunting_checklist=_hunting_checklist(
             artifact,
             result.observables,
+        ),
+        detection_rules=build_detection_rules(
+            result,
+            artifact,
         ),
         recommendations=recommendations,
         evidence=result.evidence,

@@ -158,6 +158,105 @@ class VirusTotalClient:
 
         return enrichment
 
+    async def lookup_indicator(
+        self,
+        indicator_type: str,
+        value: str,
+    ) -> ProviderResult:
+        """
+        Consulta reputação e resoluções passivas de um IP ou domínio.
+
+        O valor precisa ter sido validado e normalizado pelo chamador.
+        """
+
+        collection = {
+            "ip": "ip_addresses",
+            "domain": "domains",
+        }.get(indicator_type)
+
+        if collection is None:
+            raise ValueError(
+                f"unsupported indicator type: {indicator_type}"
+            )
+
+        if not self.api_key:
+            return ProviderResult(
+                provider="virustotal",
+                status="not_configured",
+                error="VIRUSTOTAL_API_KEY is not set",
+            )
+
+        headers = {
+            "x-apikey": self.api_key,
+            "accept": "application/json",
+        }
+
+        try:
+            async with httpx.AsyncClient(
+                base_url=self.BASE_URL,
+                headers=headers,
+                timeout=self.timeout,
+                transport=self.transport,
+            ) as client:
+                report, resolutions = await asyncio.gather(
+                    self._get_json(
+                        client,
+                        f"/{collection}/{value}",
+                    ),
+                    self._get_json(
+                        client,
+                        f"/{collection}/{value}/resolutions",
+                        params={"limit": self.max_items},
+                    ),
+                    return_exceptions=True,
+                )
+
+                if isinstance(report, BaseException):
+                    raise report
+
+                # Resoluções são complementares: falha não invalida
+                # a reputação principal.
+                if isinstance(resolutions, BaseException):
+                    resolutions = {}
+
+                return ProviderResult(
+                    provider="virustotal",
+                    status="ok",
+                    data={
+                        "report": report,
+                        "resolutions": resolutions,
+                    },
+                )
+
+        except httpx.HTTPStatusError as exception:
+            status_code = exception.response.status_code
+
+            return ProviderResult(
+                provider="virustotal",
+                status=self._map_http_status(status_code),
+                error=f"VirusTotal HTTP {status_code}",
+            )
+
+        except (
+            httpx.TimeoutException,
+            httpx.RequestError,
+        ) as exception:
+            return ProviderResult(
+                provider="virustotal",
+                status="error",
+                error=(
+                    "VirusTotal transport error: "
+                    f"{type(exception).__name__}"
+                ),
+            )
+
+        except ValueError:
+            return ProviderResult(
+                provider="virustotal",
+                status="error",
+                error="VirusTotal returned invalid JSON",
+            )
+
     async def lookup_hash(
         self,
         artifact_hash: str,

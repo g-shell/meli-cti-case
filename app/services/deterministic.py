@@ -143,6 +143,21 @@ def _build_ttps(
             "T1218.011",
             "System Binary Proxy Execution: Rundll32",
         ),
+        (
+            "launchctl load",
+            "T1543.001",
+            "Create or Modify System Process: Launch Agent",
+        ),
+        (
+            "sh -c ",
+            "T1059.004",
+            "Command and Scripting Interpreter: Unix Shell",
+        ),
+        (
+            "osascript",
+            "T1059.002",
+            "Command and Scripting Interpreter: AppleScript",
+        ),
     )
 
     for needle, technique_id, technique_name in command_mappings:
@@ -163,6 +178,63 @@ def _build_ttps(
                 rationale=(
                     "O sandbox registrou comando contendo "
                     f"'{needle}'."
+                ),
+            )
+        )
+
+    file_rows = _feature_rows(
+        features,
+        "files_written",
+    )
+
+    launchd_mappings = (
+        (
+            "/library/launchagents/",
+            "T1543.001",
+            "Create or Modify System Process: Launch Agent",
+        ),
+        (
+            "/library/launchdaemons/",
+            "T1543.004",
+            "Create or Modify System Process: Launch Daemon",
+        ),
+    )
+
+    for needle, technique_id, technique_name in launchd_mappings:
+        evidence_ids = _matching_evidence_ids(
+            file_rows,
+            needle,
+        )
+
+        if not evidence_ids:
+            continue
+
+        existing = next(
+            (
+                ttp
+                for ttp in ttps
+                if ttp.technique_id == technique_id
+            ),
+            None,
+        )
+
+        if existing is not None:
+            existing.evidence_ids = list(
+                dict.fromkeys(
+                    existing.evidence_ids + evidence_ids
+                )
+            )
+            continue
+
+        ttps.append(
+            TTPAssessment(
+                technique_id=technique_id,
+                technique_name=technique_name,
+                confidence="high",
+                evidence_ids=evidence_ids,
+                rationale=(
+                    "O sandbox registrou gravação de plist "
+                    f"em '{needle}'."
                 ),
             )
         )
@@ -289,26 +361,40 @@ def _build_family_candidates(
             else []
         )
 
-        independent_sources = _safe_int(
-            item.get("independent_sources")
-        )
+        raw_confidence = item.get("confidence")
 
         confidence: Confidence = (
-            "high"
-            if independent_sources >= 2
+            raw_confidence
+            if raw_confidence in ("low", "medium", "high")
             else "low"
         )
 
-        rationale = (
-            "Sinais independentes do VirusTotal e "
-            "MalwareBazaar são compatíveis."
-            if independent_sources >= 2
-            else (
-                "Identificação baseada em uma única fonte; "
+        primary = ", ".join(item.get("primary_sources") or []) or "nenhuma"
+        related = ", ".join(item.get("related_sources") or []) or "nenhuma"
+
+        if confidence == "high":
+            rationale = (
+                "Rótulo da própria amostra em provedores "
+                f"independentes ({primary})."
+            )
+        elif confidence == "medium":
+            rationale = (
+                f"Rótulo da amostra ({primary}) corroborado por "
+                f"artefatos da cadeia de infecção ({related}); "
+                "loaders e payloads podem ter famílias distintas."
+            )
+        elif item.get("primary_sources"):
+            rationale = (
+                f"Identificação baseada em uma única fonte ({primary}); "
                 "requer confirmação comportamental ou "
                 "análise de código."
             )
-        )
+        else:
+            rationale = (
+                "Rótulo presente apenas em artefato relacionado "
+                f"({related}); indica ecossistema/cadeia, "
+                "não identidade da amostra."
+            )
 
         candidates.append(
             FamilyCandidate(

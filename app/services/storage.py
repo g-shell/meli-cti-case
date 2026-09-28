@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from app.models import (
+    IndicatorEnrichment,
     ObservableOccurrence,
     ObservableType,
     RepositoryStats,
@@ -128,6 +129,108 @@ class TriageRepository:
                 ON scans(created_at DESC)
                 """
             )
+
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS enrichments (
+                    indicator_type TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    verdict TEXT NOT NULL,
+                    fetched_at TEXT NOT NULL,
+                    result_json TEXT NOT NULL,
+                    PRIMARY KEY (indicator_type, value)
+                )
+                """
+            )
+
+    def save_enrichment(
+        self,
+        enrichment: IndicatorEnrichment,
+    ) -> None:
+        """
+        Guarda a última consulta do indicador (cache e histórico).
+
+        Avistamentos locais não são persistidos: são recalculados
+        a cada leitura a partir dos scans.
+        """
+        payload = enrichment.model_copy(
+            update={
+                "cached": False,
+                "local_sightings": [],
+            }
+        ).model_dump_json()
+
+        with self._lock:
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO enrichments (
+                        indicator_type,
+                        value,
+                        verdict,
+                        fetched_at,
+                        result_json
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(indicator_type, value) DO UPDATE SET
+                        verdict = excluded.verdict,
+                        fetched_at = excluded.fetched_at,
+                        result_json = excluded.result_json
+                    """,
+                    (
+                        enrichment.indicator_type,
+                        enrichment.value,
+                        enrichment.verdict,
+                        enrichment.fetched_at.isoformat(),
+                        payload,
+                    ),
+                )
+
+    def get_enrichment(
+        self,
+        indicator_type: str,
+        value: str,
+    ) -> IndicatorEnrichment | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT result_json
+                FROM enrichments
+                WHERE indicator_type = ? AND value = ?
+                """,
+                (indicator_type, value),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return IndicatorEnrichment.model_validate_json(
+            row["result_json"]
+        )
+
+    def list_enrichments(
+        self,
+        limit: int = 50,
+    ) -> list[IndicatorEnrichment]:
+        safe_limit = max(1, min(limit, 200))
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT result_json
+                FROM enrichments
+                ORDER BY fetched_at DESC
+                LIMIT ?
+                """,
+                (safe_limit,),
+            ).fetchall()
+
+        return [
+            IndicatorEnrichment.model_validate_json(
+                row["result_json"]
+            )
+            for row in rows
+        ]
 
     def save(
         self,

@@ -1,0 +1,29 @@
+title: Terminal Encerrado por Shell Não Interativo (ClickFix)
+id: 9a4c2e7f-5b1d-4c3e-8f60-7d2a1b9c3e58
+status: experimental
+description: |
+    Detecta killall Terminal iniciado por sh/bash/zsh. Em cadeias ClickFix o payload fecha a janela
+    onde a vítima colou o comando, ocultando evidência e interrompendo a interação.
+    Observado no dropper apps.bin (sh -c killall Terminal).
+references:
+    - https://attack.mitre.org/techniques/T1564/
+author: MELI CTI
+date: 2026-09-27
+tags:
+    - attack.defense-evasion
+    - attack.t1564
+logsource:
+    product: macos
+    category: process_creation
+detection:
+    selection:
+        Image|endswith: '/killall'
+        CommandLine|contains: 'Terminal'
+        ParentImage|endswith:
+            - '/sh'
+            - '/bash'
+            - '/zsh'
+    condition: selection
+falsepositives:
+    - Scripts de administração que reiniciam o Terminal (baixa frequência). Correlacionar com as regras de LaunchAgent.
+level: medium

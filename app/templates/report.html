@@ -14,7 +14,14 @@
                 <h1>{{ report.title }}</h1>
                 <p class="hash mono">{{ report.artifact.requested_hash }}</p>
             </div>
-            <div class="classification">{{ report.classification }}</div>
+            <div class="header-actions">
+                <div class="classification">{{ report.classification }}</div>
+                <a
+                    class="download-pdf"
+                    href="/api/v1/scans/{{ report.scan_id }}/report/pdf"
+                    download
+                >Baixar PDF</a>
+            </div>
         </header>
 
         <section class="metadata-grid" aria-label="Metadados do relatório">
@@ -303,7 +310,39 @@
         </section>
 
         <section class="section">
-            <h2>10. Recomendações e MITRE D3FEND</h2>
+            <h2>10. Regras de detecção</h2>
+            <p class="muted">
+                Geradas automaticamente a partir dos IOCs e dos comportamentos
+                observados neste scan. Valide em ambiente de teste antes de
+                publicar em produção.
+            </p>
+            {% if report.detection_rules %}
+            <div class="rules">
+                {% for rule in report.detection_rules %}
+                <article class="card rule">
+                    <div class="card-heading">
+                        <strong>{{ rule.rule_id }} · {{ rule.title }}</strong>
+                        <span class="badge">{{ rule.language | upper }}</span>
+                    </div>
+                    <p class="muted">
+                        {{ rule.platform }} ·
+                        {{ "Baseada em IOC" if rule.basis == "ioc" else "Baseada em comportamento" }}
+                        {% if rule.mitre_attack %} · ATT&amp;CK {{ rule.mitre_attack | join(", ") }}{% endif %}
+                        {% if rule.evidence_ids %} · Evidências {{ rule.evidence_ids | join(", ") }}{% endif %}
+                    </p>
+                    <p><strong>Hipótese:</strong> {{ rule.hypothesis }}</p>
+                    <p class="muted">{{ rule.rationale }}</p>
+                    <pre>{{ rule.content }}</pre>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty">Não há IOCs ou comportamentos suficientes para gerar regras.</p>
+            {% endif %}
+        </section>
+
+        <section class="section">
+            <h2>11. Recomendações e MITRE D3FEND</h2>
             {% if report.recommendations %}
             <div class="cards">
                 {% for recommendation in report.recommendations %}
@@ -328,7 +367,7 @@
         </section>
 
         <section class="section">
-            <h2>11. Execução da análise</h2>
+            <h2>12. Execução da análise</h2>
             <div class="table-wrap">
                 <table>
                     <tbody>
@@ -348,7 +387,7 @@
         </section>
 
         <section class="section">
-            <h2>12. Limitações e caveats</h2>
+            <h2>13. Limitações e caveats</h2>
             <ul>
                 {% for limitation in report.limitations %}
                 <li>{{ limitation }}</li>
@@ -357,7 +396,7 @@
         </section>
 
         <section class="section">
-            <h2>13. Metodologia</h2>
+            <h2>14. Metodologia</h2>
             <ol>
                 {% for step in report.methodology %}
                 <li>{{ step }}</li>
@@ -366,7 +405,7 @@
         </section>
 
         <section class="section page-break">
-            <h2>14. Apêndice de evidências</h2>
+            <h2>15. Apêndice de evidências</h2>
             {% if report.evidence %}
             <div class="evidence-list">
                 {% for evidence in report.evidence %}

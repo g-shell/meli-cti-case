@@ -9,6 +9,7 @@ from uuid import UUID
 from fastapi import (
     APIRouter,
     HTTPException,
+    Path,
     Query,
     Request,
     Response,
@@ -18,6 +19,8 @@ from fastapi.responses import HTMLResponse
 
 from app.models import (
     CTIReport,
+    IndicatorEnrichment,
+    IndicatorType,
     ObservableOccurrence,
     ObservableType,
     RepositoryStats,
@@ -25,10 +28,16 @@ from app.models import (
     TriageResult,
 )
 from app.services.agent import TriageWorkflow
+from app.services.enrichment import (
+    EnrichmentError,
+    IndicatorEnricher,
+    InvalidIndicatorError,
+)
 from app.services.report import (
     build_cti_report,
     render_cti_report_html,
 )
+from app.services.report_pdf import render_cti_report_pdf
 from app.services.storage import TriageRepository
 
 
@@ -263,6 +272,53 @@ async def get_scan_report_html(
 
 
 @router.get(
+    "/scans/{scan_id}/report/pdf",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {"application/pdf": {}},
+            "description": "Relatório CTI em PDF.",
+        }
+    },
+    tags=["reports"],
+)
+async def get_scan_report_pdf(
+    scan_id: UUID,
+    request: Request,
+    inline: Annotated[
+        bool,
+        Query(description="Exibe no navegador em vez de baixar."),
+    ] = False,
+) -> Response:
+    """
+    Relatório CTI em PDF: capa executiva (TLP, BLUF, julgamentos-chave,
+    ações P0) e corpo técnico (PIRs, ATT&CK, infraestrutura, IOCs
+    defanged, hunting, D3FEND, limitações e anexos).
+    """
+
+    result = await _load_scan(scan_id, request)
+    report = build_cti_report(result)
+    content = await asyncio.to_thread(
+        render_cti_report_pdf,
+        report,
+    )
+
+    disposition = "inline" if inline else "attachment"
+
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'{disposition}; filename="CTI-{scan_id}.pdf"'
+            ),
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.get(
     "/scans/{scan_id}/export.csv",
     response_class=Response,
     tags=["history"],
@@ -294,4 +350,130 @@ async def export_scan_csv(
             ),
             "X-Content-Type-Options": "nosniff",
         },
+    )
+
+
+ENRICHMENT_ERROR_STATUS = {
+    "not_configured": status.HTTP_503_SERVICE_UNAVAILABLE,
+    "not_found": status.HTTP_404_NOT_FOUND,
+    "rate_limited": status.HTTP_429_TOO_MANY_REQUESTS,
+    "forbidden": status.HTTP_502_BAD_GATEWAY,
+    "error": status.HTTP_502_BAD_GATEWAY,
+}
+
+
+async def _enrich(
+    indicator_type: IndicatorType,
+    value: str,
+    force_refresh: bool,
+    request: Request,
+) -> IndicatorEnrichment:
+    enricher = cast(
+        IndicatorEnricher,
+        request.app.state.enricher,
+    )
+
+    try:
+        return await enricher.enrich(
+            indicator_type,
+            value,
+            force_refresh,
+        )
+    except InvalidIndicatorError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    except EnrichmentError as exc:
+        detail = (
+            "Indicador não encontrado no VirusTotal."
+            if exc.status == "not_found"
+            else f"Falha no provedor: {exc.status}."
+        )
+
+        raise HTTPException(
+            status_code=ENRICHMENT_ERROR_STATUS.get(
+                exc.status,
+                status.HTTP_502_BAD_GATEWAY,
+            ),
+            detail=detail,
+        ) from exc
+
+
+@router.get(
+    "/enrich/ip/{ip}",
+    response_model=IndicatorEnrichment,
+    response_model_exclude_none=True,
+    tags=["enrichment"],
+)
+async def enrich_ip(
+    ip: Annotated[
+        str,
+        Path(
+            min_length=2,
+            max_length=64,
+            description="IPv4/IPv6 público. Aceita notação defanged (1.2.3[.]4).",
+        ),
+    ],
+    request: Request,
+    force_refresh: Annotated[
+        bool,
+        Query(description="Ignora o cache local."),
+    ] = False,
+) -> IndicatorEnrichment:
+    """
+    Reputação ao vivo no VirusTotal (ASN, país, detecções,
+    resoluções passivas) e avistamentos no histórico local.
+    """
+
+    return await _enrich("ip", ip, force_refresh, request)
+
+
+@router.get(
+    "/enrich/domain/{domain}",
+    response_model=IndicatorEnrichment,
+    response_model_exclude_none=True,
+    tags=["enrichment"],
+)
+async def enrich_domain(
+    domain: Annotated[
+        str,
+        Path(
+            min_length=3,
+            max_length=253,
+            description="Domínio. Aceita notação defanged (example[.]com).",
+        ),
+    ],
+    request: Request,
+    force_refresh: Annotated[
+        bool,
+        Query(description="Ignora o cache local."),
+    ] = False,
+) -> IndicatorEnrichment:
+    """
+    Reputação ao vivo no VirusTotal (registrar, criação, categorias,
+    DNS, resoluções passivas) e avistamentos no histórico local.
+    """
+
+    return await _enrich("domain", domain, force_refresh, request)
+
+
+@router.get(
+    "/enrichments",
+    response_model=list[IndicatorEnrichment],
+    response_model_exclude_none=True,
+    tags=["enrichment"],
+)
+async def list_enrichments(
+    request: Request,
+    limit: Annotated[
+        int,
+        Query(ge=1, le=200),
+    ] = 50,
+) -> list[IndicatorEnrichment]:
+    """Histórico de indicadores enriquecidos (mais recentes primeiro)."""
+
+    return await asyncio.to_thread(
+        _repository(request).list_enrichments,
+        limit,
     )

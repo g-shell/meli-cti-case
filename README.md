@@ -1,434 +1,128 @@
-# CTI Triage
+# Challenge Mercado Livre — Threat Intelligence
 
-API e frontend para triagem de hashes, enriquecimento de Cyber Threat
-Intelligence, atribuição assistida de família de malware e geração de relatório
-operacional para investigação e threat hunting.
+**CTI Triage** é uma plataforma de triagem de malware. Basta informar o hash de
+um arquivo suspeito para que ela:
+- consulte o VirusTotal e o MalwareBazaar;
+- analise os dados com inteligência artificial;
+- indique a provável família do malware;
+- gere um relatório de inteligência pronto para as equipes de segurança.
 
-O fluxo consulta VirusTotal e MalwareBazaar, normaliza as evidências, executa
-uma análise determinística, usa GenAI opcionalmente e aplica grounding antes de
-persistir e disseminar o resultado.
+**Hash analisado no case:**
+`7a8fc48ce4df4448b91a1e6b66410cca6993ac072cb12860b9cfa6438b25ed8e`
 
-## Funcionalidades
+---
 
-- Validação de MD5, SHA-1 e SHA-256.
-- Consulta assíncrona a VirusTotal e MalwareBazaar.
-- Normalização de observáveis e evidências rastreáveis.
-- Classificação determinística de veredito e confiança.
-- Hipóteses de família baseadas em sinais independentes.
-- Mapeamento de TTPs para MITRE ATT&CK somente com evidência comportamental.
-- Análise opcional com Anthropic Claude ou OpenAI.
-- LangGraph para orquestração do workflow.
-- Grounding contra evidências inexistentes e IOCs inventados.
-- Fallback determinístico quando a GenAI falha.
-- Registro do provedor, modelo e consumo de tokens.
-- Persistência em SQLite e histórico resumido em CSV.
-- Relatório CTI em JSON e HTML imprimível.
-- PIRs, investigação de C2, hunting e recomendações MITRE D3FEND.
-- Busca de observáveis no histórico.
-- Dashboard web sem framework frontend externo.
-- Swagger, ReDoc, Docker e testes automatizados.
+## O que foi entregue
 
-## Arquitetura
+| Item do desafio | Entrega |
+|---|---|
+| 1. Consultar o hash no VirusTotal e no MalwareBazaar | Consulta automática às duas fontes, incluindo comportamento em sandbox, conexões de rede e arquivos relacionados |
+| 2. Relatório de inteligência com TTPs, C2 e mitigações | Relatório gerado para cada análise, com MITRE ATT&CK, avaliação de C2, indicadores (IOCs), orientações de investigação, **regras de detecção geradas a partir dos IOCs e do comportamento** e recomendações MITRE D3FEND. Disponível em HTML e PDF |
+| 3. API em Python com GenAI (LangGraph/LangChain) e armazenamento | API em Python que usa o Claude (Anthropic) para a triagem e a atribuição de família. Os resultados ficam em SQLite e CSV |
+| 4. Extras | Execução em Docker, painel web, histórico de análises, consulta de reputação de IPs e domínios e regras de detecção prontas (YARA e Sigma) |
+
+---
+
+## Resultado da análise do hash
+
+| Pergunta | Resposta |
+|---|---|
+| **O arquivo é malicioso?** | **Sim**, com confiança alta. 33 antivírus o detectam e ele instala persistência no sistema. |
+| **Que tipo de ameaça é?** | Um **infostealer para macOS**, malware que rouba credenciais e dados. As fontes o associam às famílias Phebot, MacSync e AMOS (Atomic macOS Stealer). |
+| **O que ele faz?** | Fecha o Terminal para esconder a ação e grava um script oculto. Depois cria uma tarefa (LaunchAgent) para voltar a executar sempre que o usuário faz login. |
+| **Há servidor de comando e controle (C2)?** | **Não foi confirmado.** Quase todo o tráfego observado era de serviços legítimos (Apple, Akamai, Fastly). |
+| **O que fazer?** | Procurar os indicadores abaixo nos Macs da empresa, isolar as máquinas afetadas e trocar as senhas dos usuários envolvidos. |
+
+**Técnicas MITRE ATT&CK observadas:** T1543.001 (persistência via Launch Agent) e
+T1059.004 (execução de comandos via shell).
+
+**Indicadores para busca (IOCs):**
+
+| Indicador | O que é |
+|---|---|
+| `7a8fc48ce4df4448b91a1e6b66410cca6993ac072cb12860b9cfa6438b25ed8e` | Arquivo analisado (`apps.bin`) |
+| `e6e72f978548b80f2e72e9dcf1d7f8c4b7b05a5e045c876651b91405714415c1` | Script oculto gravado pelo malware |
+| `b34241006b130412756e834250f2f73da11f895183040618e030b50b5951da9a` | Script que baixou o malware (AMOS) |
+| `~/Library/LaunchAgents/com.<usuário>.<16 letras>.plist` | Arquivo de persistência criado no Mac |
+
+> **Controle de qualidade:** o VirusTotal também tentou abrir esse arquivo de Mac num
+> ambiente Windows, gerando comportamentos que não pertencem à ameaça. A plataforma
+> identifica e descarta esse ruído automaticamente. Sem esse filtro, o relatório
+> atribuiria à amostra cinco técnicas que ela não usa.
+
+---
+
+## Como funciona
 
 ```mermaid
-flowchart TD
-    A[Hash recebido] --> B[Coleta paralela]
-    B --> C[Normalização]
-    C --> D[Baseline determinística]
-    D --> E{GenAI habilitada?}
-    E -- Sim --> F[Claude ou OpenAI]
-    E -- Não --> G[Grounding]
-    F --> G
-    G --> H[Finalização]
-    H --> I[SQLite e CSV]
-    I --> J[API JSON]
-    I --> K[Relatório HTML]
-    I --> L[Frontend]
+flowchart LR
+    A[Hash] --> B[Consulta às fontes]
+    B --> C[Organização das evidências]
+    C --> D[Análise com IA]
+    D --> E[Verificação das conclusões]
+    E --> F[Relatório e histórico]
 ```
 
-O relatório não faz uma segunda chamada ao modelo. Ele é construído
-deterministicamente a partir do `TriageResult` já persistido.
-
-## Estrutura principal
-
-```text
-cti-triage/
-├── app/
-│   ├── api/routes.py
-│   ├── clients/
-│   │   ├── malwarebazaar.py
-│   │   └── virustotal.py
-│   ├── services/
-│   │   ├── agent.py
-│   │   ├── collector.py
-│   │   ├── deterministic.py
-│   │   ├── normalize.py
-│   │   ├── report.py
-│   │   └── storage.py
-│   ├── static/
-│   │   ├── app.css
-│   │   ├── app.js
-│   │   └── report.css
-│   ├── templates/
-│   │   ├── index.html
-│   │   └── report.html
-│   ├── config.py
-│   ├── main.py
-│   └── models.py
-├── docs/
-├── tests/
-├── .env.example
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-└── requirements-dev.txt
-```
-
-## 1. Pré-requisitos
-
-- Python 3.11 ou superior.
-- PowerShell.
-- Chave do VirusTotal.
-- Chave do MalwareBazaar, se exigida pela conta utilizada.
-- Chave Anthropic ou OpenAI apenas para a análise GenAI.
-- Docker Desktop apenas para execução em container.
-
-## 2. Preparação no Windows
-
-Abra o PowerShell na pasta do projeto:
-
-```powershell
-cd "C:\Users\gusta\OneDrive\Área de Trabalho\case_cti\cti-triage"
-```
-
-Crie e ative o ambiente virtual:
-
-```powershell
-py -3.13 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-Caso a política do PowerShell bloqueie a ativação:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
-```
-
-Instale as dependências da aplicação e dos testes:
-
-```powershell
-python -m pip install --upgrade pip
-python -m pip install -r requirements-dev.txt
-```
-
-## 3. Configuração
-
-Crie o `.env` a partir do exemplo:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Edite somente o `.env`. Nunca coloque chaves reais em `.env.example`.
-
-Exemplo para Claude:
-
-```dotenv
-APP_NAME=CTI Triage
-APP_ENV=development
-DATABASE_PATH=data/cti.db
-CSV_EXPORT_PATH=data/triage_history.csv
-
-VIRUSTOTAL_API_KEY=sua_chave
-MALWAREBAZAAR_AUTH_KEY=sua_chave_se_aplicavel
-
-ENABLE_GENAI=true
-GENAI_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sua_chave
-ANTHROPIC_MODEL=claude-sonnet-4-6
-ANTHROPIC_MAX_TOKENS=4096
-```
-
-Para executar sem gastar tokens:
-
-```dotenv
-ENABLE_GENAI=false
-```
-
-Também é possível manter a aplicação habilitada e enviar no request:
-
-```json
-{
-  "use_genai": false
-}
-```
-
-## 4. Testes
-
-Execute toda a suíte:
-
-```powershell
-python -m pytest -q
-```
-
-Resultado validado nesta versão:
-
-```text
-46 passed
-```
-
-Testes isolados:
-
-```powershell
-python -m pytest -q .\tests\test_models.py
-python -m pytest -q .\tests\test_agent.py
-python -m pytest -q .\tests\test_report.py
-python -m pytest -q .\tests\test_api.py
-```
-
-Os testes do agente usam mocks e não consomem tokens do Claude ou OpenAI.
-
-## 5. Execução local
-
-```powershell
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-Acesse:
-
-- Frontend: <http://127.0.0.1:8000/>
-- Swagger: <http://127.0.0.1:8000/docs>
-- ReDoc: <http://127.0.0.1:8000/redoc>
-- Health: <http://127.0.0.1:8000/api/v1/health>
-
-## 6. Primeira triagem
-
-No Swagger, abra `POST /api/v1/triage` e utilize:
-
-```json
-{
-  "hash": "7a8fc48ce4df4448b91a1e6b66410cca6993ac072cb12860b9cfa6438b25ed8e",
-  "providers": [
-    "virustotal",
-    "malwarebazaar"
-  ],
-  "use_genai": true,
-  "force_refresh": false
-}
-```
+1. **Coleta:** busca o hash no VirusTotal e no MalwareBazaar.
+2. **Organização:** cada informação recebida vira uma evidência identificada.
+3. **Análise:** uma análise por regras roda sempre; a IA (Claude) complementa com contexto e interpretação.
+4. **Verificação:** tudo o que a IA afirma é conferido com as evidências. Conclusões sem base são descartadas, e infraestrutura legítima nunca é apontada como C2.
+5. **Entrega:** o resultado fica salvo e disponível no painel, na API e nos relatórios.
 
-Sinais de que a GenAI foi executada:
+A metodologia segue o **ciclo de inteligência**: requisitos, coleta, processamento,
+análise e disseminação. Ele se organiza em cinco perguntas-chave (as da tabela
+acima), e o nível de confiança de cada conclusão é declarado.
 
-```json
-{
-  "analysis_execution": {
-    "requested": true,
-    "attempted": true,
-    "succeeded": true,
-    "engine": "genai",
-    "provider": "anthropic",
-    "model": "claude-sonnet-4-6",
-    "fallback_used": false,
-    "error_code": null,
-    "usage": {
-      "input_tokens": 3250,
-      "output_tokens": 980,
-      "total_tokens": 4230
-    }
-  },
-  "source_errors": []
-}
-```
+---
 
-Os números acima são apenas ilustrativos. O consumo real depende da quantidade
-de evidências enviada ao modelo.
+## Relatório
 
-## 7. Endpoints
+Cada análise gera um relatório de inteligência que pode ser visualizado no
+navegador ou **baixado em PDF**. O PDF tem:
+- **Capa executiva:** veredito, resumo, principais conclusões e ações prioritárias.
+- **Parte técnica:** técnicas ATT&CK, infraestrutura, indicadores, orientações de investigação e recomendações D3FEND.
+- **Regras de detecção prontas para uso:** geradas para cada análise, cada uma com a hipótese do que um alerta significa.
+  - **A partir dos IOCs:** YARA com os hashes da amostra e da cadeia, e consulta de busca para o Elastic Security.
+  - **A partir do comportamento observado:** Sigma e EQL, por exemplo para a persistência via LaunchAgent.
+- **Marcação TLP** em todas as páginas.
+- **Indicadores de rede neutralizados** (ex.: `exemplo[.]com`), para evitar cliques acidentais.
 
-| Método | Endpoint | Finalidade |
-|---|---|---|
-| `GET` | `/api/v1/health` | Verifica disponibilidade |
-| `POST` | `/api/v1/triage` | Executa nova triagem |
-| `GET` | `/api/v1/scans` | Lista histórico |
-| `GET` | `/api/v1/scans/{scan_id}` | Recupera uma triagem |
-| `GET` | `/api/v1/scans/{scan_id}/report` | Relatório CTI em JSON |
-| `GET` | `/api/v1/scans/{scan_id}/report/html` | Relatório CTI em HTML |
-| `GET` | `/api/v1/scans/{scan_id}/export.csv` | Exportação técnica em CSV |
-| `GET` | `/api/v1/observables/search` | Busca observáveis no histórico |
-| `GET` | `/api/v1/stats` | Métricas do repositório |
+---
 
-Exemplo de busca:
+## Como executar
 
-```http
-GET /api/v1/observables/search?value=example.com&type=domain&exact=true
-```
+**Requisitos:** Docker Desktop e chaves de API do VirusTotal, do MalwareBazaar e da
+Anthropic. A chave da Anthropic é opcional; sem ela, a análise roda sem IA.
 
-## 8. Metodologia de inteligência
+1. Copie o arquivo `.env.example` para `.env` e preencha as chaves.
+2. Na pasta do projeto, execute:
 
-O relatório aplica:
+   ```powershell
+   docker compose up -d --build
+   ```
 
-1. **Direction:** definição de PIRs a partir do hash inicial.
-2. **Collection:** consulta independente a fontes públicas de inteligência.
-3. **Processing:** normalização em observáveis e evidências identificadas.
-4. **Analysis:** baseline determinística e GenAI opcional.
-5. **Grounding:** remoção de alegações sem evidência válida.
-6. **Dissemination:** resposta JSON, histórico, CSV e relatório HTML.
-7. **Feedback:** lacunas e caveats orientam novas coletas.
+3. Acesse o painel em **<http://localhost:8000>**, cole o hash e clique em **Executar triagem**.
 
-Os PIRs respondem:
+A documentação interativa da API fica em <http://localhost:8000/docs>.
 
-- O artefato deve ser tratado como malicioso ou suspeito?
-- Qual família é sustentada pelas evidências?
-- Quais comportamentos e TTPs foram observados?
-- Existe infraestrutura de rede ou C2 associada?
-- Quais ações defensivas devem ser priorizadas?
+---
 
-O relatório diferencia:
+## Regras de detecção
 
-- Infraestrutura relacionada.
-- Atividade de rede observada.
-- Candidato a C2.
-- C2 confirmado.
+Além das regras geradas em cada relatório, a pasta [`detections/`](detections/README.md)
+traz material revisado manualmente para este hash:
+- **Regras YARA** para identificar o arquivo e os artefatos de persistência.
+- **Regras Sigma**, conversíveis para o Elastic Security.
+- **Script de verificação para macOS**, que procura sinais da infecção sem alterar nada na máquina.
 
-O sistema não promove automaticamente um IOC a C2 confirmado.
+---
 
-## 9. Persistência
+## Limitações
 
-Por padrão:
+- A plataforma usa análises de fontes públicas; não executa o malware em ambiente próprio.
+- A família indicada é uma hipótese baseada nas fontes, não uma atribuição definitiva.
+- Antes de uso fora de ambiente controlado, é preciso adicionar autenticação.
 
-```text
-data/cti.db
-data/triage_history.csv
-```
+---
 
-O SQLite armazena o `TriageResult` completo em JSON e mantém campos indexáveis.
-O CSV armazena um resumo para auditoria e análise rápida.
-
-Não apague o arquivo SQLite enquanto a API estiver executando. Faça backup dos
-arquivos de `data/` antes de mudanças de schema ou atualização de ambiente.
-
-## 10. Docker
-
-Crie o `.env` antes de iniciar:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Construa e execute:
-
-```powershell
-docker compose up --build -d
-```
-
-Valide:
-
-```powershell
-docker compose ps
-docker compose logs -f cti-triage
-```
-
-Encerre:
-
-```powershell
-docker compose down
-```
-
-O volume `cti_data` preserva SQLite e CSV entre reinicializações.
-
-Para remover também os dados persistidos:
-
-```powershell
-docker compose down -v
-```
-
-Esse último comando remove o volume e deve ser usado somente quando a perda do
-histórico for intencional.
-
-## 11. Controles de segurança implementados
-
-- Validação estrita do formato de hash.
-- Tipagem Pydantic das entradas e saídas.
-- Timeout dos provedores externos.
-- Prompt que trata metadados externos como conteúdo não confiável.
-- Structured output para a GenAI.
-- Grounding de famílias, TTPs e C2.
-- Fallback determinístico.
-- Escape automático no relatório HTML.
-- Uso de `textContent` no frontend contra DOM XSS.
-- Content Security Policy nas páginas locais.
-- Neutralização de Formula Injection em CSV.
-- `.env` excluído do Git e do contexto Docker.
-- Container executado como usuário sem privilégio.
-- Volume dedicado para persistência.
-
-## 12. Troubleshooting
-
-### `422 Unprocessable Content`
-
-Verifique se o JSON possui vírgulas, aspas e hash hexadecimal com 32, 40 ou 64
-caracteres.
-
-### Swagger mostra `Failed to fetch`
-
-Confirme se o Uvicorn está ativo:
-
-```powershell
-python -m uvicorn app.main:app --reload
-```
-
-Depois atualize <http://127.0.0.1:8000/docs>.
-
-### `OpenAIRateLimitError` ou erro de crédito
-
-Consulte `analysis_execution.error_code` e `source_errors`. O workflow preserva
-o resultado determinístico mesmo quando o provedor GenAI falha.
-
-### `source_errors` contém falha da GenAI
-
-Confirme:
-
-- `ENABLE_GENAI=true`.
-- `GENAI_PROVIDER=anthropic` ou `openai`.
-- Chave correspondente configurada.
-- Créditos e limites da conta.
-- Nome do modelo disponível para a conta.
-
-### Histórico vazio
-
-Execute ao menos uma triagem com sucesso e confirme os caminhos
-`DATABASE_PATH` e `CSV_EXPORT_PATH`.
-
-## 13. Limitações conhecidas
-
-- O projeto consulta inteligência existente; não envia amostras para sandbox.
-- Atribuição de família não equivale à atribuição de ator ou campanha.
-- Ausência de detecção não comprova benignidade.
-- Infraestruturas podem ser compartilhadas ou reatribuídas.
-- As recomendações devem ser adaptadas ao ambiente da organização.
-- O cache por hash ainda pode ser evoluído usando `force_refresh` e TTL.
-- Autenticação e autorização devem ser adicionadas antes de exposição pública.
-
-## 14. Critérios de aceite
-
-- [ ] `python -m pytest -q` retorna todos os testes aprovados.
-- [ ] Health retorna HTTP 200.
-- [ ] Frontend carrega sem erro.
-- [ ] VirusTotal e MalwareBazaar aparecem no request.
-- [ ] Triagem determinística funciona sem GenAI.
-- [ ] Mock de GenAI registra tokens sem custo externo.
-- [ ] Execução real controlada identifica provedor, modelo e tokens.
-- [ ] SQLite e CSV são criados.
-- [ ] Histórico retorna o scan persistido.
-- [ ] Relatório JSON retorna cinco PIRs.
-- [ ] Relatório HTML é exibido e pode ser impresso em PDF.
-- [ ] Busca de observáveis retorna ocorrências do histórico.
-- [ ] Docker fica saudável.
-- [ ] Nenhuma chave de API está versionada.
-
-## Uso responsável
-
-Este projeto deve ser utilizado para defesa, investigação autorizada e
-aprendizado. Não execute amostras maliciosas em máquinas de uso pessoal ou fora
-de ambientes isolados e autorizados.
+*Projeto destinado a defesa e investigação autorizada.*

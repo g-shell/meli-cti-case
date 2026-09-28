@@ -356,6 +356,119 @@ def test_grounding_removes_unsupported_claims(
         == "medium"
     )
 
+
+def test_grounding_drops_cross_platform_noise(
+    tmp_path: Path,
+) -> None:
+    """
+    Reproduz o scan real: Mach-O aberto numa sandbox Windows
+    e tráfego para Apple/Fastly.
+    """
+    settings = Settings(
+        enable_genai=False,
+        openai_api_key=None,
+        database_path=tmp_path / "cti.db",
+        csv_export_path=tmp_path / "history.csv",
+    )
+
+    workflow = TriageWorkflow(
+        settings=settings,
+    )
+
+    apple_ip = Observable(
+        type="ip",
+        value="17.253.7.201",
+        source="virustotal",
+        relationship="contacted_ips",
+        context={
+            "known_infrastructure": "Apple",
+            "last_analysis_stats": {"malicious": 0},
+        },
+    )
+    cloud_ip = Observable(
+        type="ip",
+        value="54.173.154.19",
+        source="virustotal",
+        relationship="contacted_ips",
+        context={
+            "last_analysis_stats": {"malicious": 0},
+        },
+    )
+
+    generated = LLMAnalysis(
+        verdict="malicious",
+        confidence="high",
+        executive_summary="Teste.",
+        ttps=[
+            TTPAssessment(
+                technique_id="T1543.001",
+                technique_name="Launch Agent",
+                confidence="high",
+                evidence_ids=["E002"],
+                rationale="launchctl load.",
+            ),
+            TTPAssessment(
+                technique_id="T1218.011",
+                technique_name="Rundll32",
+                confidence="high",
+                evidence_ids=["E003"],
+                rationale="Ruído de sandbox Windows.",
+            ),
+        ],
+        c2_assessment=[apple_ip, cloud_ip],
+    )
+
+    state: TriageState = {
+        "analysis": generated,
+        "deterministic_analysis": generated,
+        "evidence": [
+            Evidence(
+                id="E001",
+                source="virustotal",
+                kind="file_metadata",
+                value={"type_description": "Mach-O"},
+            ),
+            Evidence(
+                id="E002",
+                source="virustotal",
+                kind="sandbox_command",
+                value=(
+                    "launchctl load /Users/u/Library/"
+                    "LaunchAgents/com.root.x.plist"
+                ),
+            ),
+            Evidence(
+                id="E003",
+                source="virustotal",
+                kind="sandbox_command",
+                value=(
+                    '"C:\\Windows\\system32\\rundll32.exe" '
+                    "shell32.dll,OpenAs_RunDLL"
+                ),
+            ),
+        ],
+        "observables": [apple_ip, cloud_ip],
+    }
+
+    grounded = asyncio.run(
+        workflow._ground(state)
+    )["analysis"]
+
+    assert [
+        item.technique_id
+        for item in grounded.ttps
+    ] == ["T1543.001"]
+
+    assert [
+        (item.value, item.confidence)
+        for item in grounded.c2_assessment
+    ] == [("54.173.154.19", "low")]
+
+    caveats = " ".join(grounded.analytic_caveats)
+    assert "T1218.011" in caveats
+    assert "17.253.7.201" in caveats
+
+
 class FakeRawMessage:
     def __init__(self) -> None:
         self.usage_metadata = {
