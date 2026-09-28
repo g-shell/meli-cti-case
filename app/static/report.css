@@ -1,15 +1,22 @@
+/* Identidade visual inspirada no Mercado Livre: amarelo, azul-marinho e azul. */
 :root {
-    color-scheme: dark;
-    --background: #071018;
-    --surface: #0d1b26;
-    --surface-2: #132534;
-    --border: #264355;
-    --text: #e8f1f5;
-    --muted: #9eb2bf;
-    --accent: #39d0b3;
-    --danger: #ff6b78;
-    --warning: #ffcb6b;
-    --good: #6ee7a8;
+    color-scheme: light;
+    --ml-yellow: #ffe600;
+    --ml-yellow-soft: #fff9cc;
+    --ml-navy: #2d3277;
+    --ml-blue: #3483fa;
+    --ml-blue-dark: #2968c8;
+    --ml-blue-soft: rgba(65, 137, 230, 0.12);
+    --background: #f5f5f5;
+    --surface: #ffffff;
+    --surface-2: #fafafa;
+    --border: #e6e6e6;
+    --text: #333333;
+    --muted: #737373;
+    --accent: var(--ml-blue);
+    --danger: #f23d4f;
+    --warning: #ff7733;
+    --good: #00a650;
 }
 
 * {
@@ -18,13 +25,15 @@
 
 body {
     margin: 0;
-    background:
-        radial-gradient(circle at top right, #14354a 0, transparent 32rem),
-        var(--background);
+    background: var(--background);
     color: var(--text);
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-        "Segoe UI", sans-serif;
+    font-family: "Proxima Nova", -apple-system, BlinkMacSystemFont, "Segoe UI",
+        Roboto, "Helvetica Neue", Arial, sans-serif;
     line-height: 1.55;
+}
+
+a {
+    color: var(--ml-blue);
 }
 
 .report-shell {
@@ -33,22 +42,40 @@ body {
     padding: 2rem 0 4rem;
 }
 
+/* Capa amarela, como no relatório em PDF. */
 .report-header {
     display: flex;
     justify-content: space-between;
     gap: 2rem;
     align-items: flex-start;
-    padding: 2rem;
-    border: 1px solid var(--border);
-    border-radius: 18px;
-    background: rgba(13, 27, 38, 0.92);
+    padding: 2.2rem 2rem 2rem;
+    border: 0;
+    border-bottom: 6px solid var(--ml-navy);
+    border-radius: 8px;
+    background: var(--ml-yellow);
+    color: var(--ml-navy);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.report-header .eyebrow {
+    color: var(--ml-navy);
+}
+
+.report-header h1 {
+    color: var(--ml-navy);
+}
+
+.report-header .hash {
+    color: var(--ml-navy);
+    opacity: 0.85;
 }
 
 .eyebrow {
     margin: 0 0 0.5rem;
-    color: var(--accent);
+    color: var(--ml-blue);
+    font-size: 0.8rem;
     font-weight: 700;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
 }
 
@@ -61,17 +88,23 @@ p {
 
 h1 {
     margin-bottom: 0.75rem;
-    font-size: clamp(1.8rem, 4vw, 3rem);
+    font-size: clamp(1.8rem, 4vw, 2.8rem);
+    font-weight: 700;
     line-height: 1.12;
 }
 
 h2 {
     margin-bottom: 1.2rem;
-    font-size: 1.45rem;
+    border-left: 5px solid var(--ml-yellow);
+    padding-left: 0.7rem;
+    color: var(--ml-navy);
+    font-size: 1.4rem;
+    font-weight: 700;
 }
 
 h3 {
     margin-bottom: 0.6rem;
+    color: var(--ml-blue);
     font-size: 1rem;
 }
 
@@ -85,34 +118,47 @@ h3 {
 .download-pdf {
     display: inline-flex;
     align-items: center;
-    padding: 0.55rem 1rem;
-    border-radius: 999px;
-    background: var(--accent);
-    color: #04121a;
-    font-size: 0.82rem;
-    font-weight: 800;
+    padding: 0.6rem 1.1rem;
+    border-radius: 6px;
+    background: var(--ml-blue);
+    color: #ffffff;
+    font-size: 0.85rem;
+    font-weight: 600;
     text-decoration: none;
     white-space: nowrap;
 }
 
 .download-pdf:hover,
 .download-pdf:focus-visible {
-    filter: brightness(1.1);
-    outline: 2px solid var(--accent);
+    background: var(--ml-blue-dark);
+    outline: 2px solid var(--ml-navy);
     outline-offset: 2px;
 }
 
-.classification,
+.classification {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 4px;
+    padding: 0.35rem 0.7rem;
+    background: var(--ml-navy);
+    color: var(--ml-yellow);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
 .badge {
     display: inline-flex;
     align-items: center;
-    border: 1px solid var(--accent);
-    border-radius: 999px;
-    color: var(--accent);
-    font-size: 0.78rem;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    padding: 0.35rem 0.7rem;
+    border-radius: 4px;
+    padding: 0.25rem 0.6rem;
+    background: var(--ml-blue-soft);
+    color: var(--ml-blue);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
     white-space: nowrap;
 }
@@ -124,12 +170,24 @@ h3 {
     margin: 1rem 0;
 }
 
-.metadata-grid article,
+.metadata-grid article {
+    border: 0;
+    border-top: 4px solid var(--ml-yellow);
+    border-radius: 8px;
+    background: var(--surface);
+    padding: 1rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.metadata-grid strong {
+    color: var(--ml-navy);
+}
+
 .card,
 .evidence-item {
     border: 1px solid var(--border);
-    border-radius: 14px;
-    background: var(--surface);
+    border-radius: 8px;
+    background: var(--surface-2);
     padding: 1rem;
 }
 
@@ -137,20 +195,24 @@ h3 {
     display: block;
     margin-bottom: 0.25rem;
     color: var(--muted);
-    font-size: 0.78rem;
+    font-size: 0.74rem;
+    font-weight: 600;
     text-transform: uppercase;
 }
 
 .section {
     margin-top: 1rem;
     padding: 1.5rem;
-    border: 1px solid var(--border);
-    border-radius: 18px;
-    background: rgba(13, 27, 38, 0.94);
+    border: 0;
+    border-radius: 8px;
+    background: var(--surface);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
+/* Destaque do resumo, como a caixa de decisão do PDF. */
 .summary {
-    border-left: 4px solid var(--accent);
+    border-left: 5px solid var(--ml-yellow);
+    background: var(--ml-yellow-soft);
 }
 
 .cards {
@@ -165,6 +227,11 @@ h3 {
     gap: 1rem;
     align-items: flex-start;
     margin-bottom: 0.8rem;
+    color: var(--ml-navy);
+}
+
+.card h3 {
+    color: var(--ml-navy);
 }
 
 .muted,
@@ -184,6 +251,7 @@ footer {
 
 .table-wrap {
     overflow-x: auto;
+    border-radius: 6px;
 }
 
 table {
@@ -193,17 +261,28 @@ table {
 
 th,
 td {
-    padding: 0.75rem;
+    padding: 0.7rem 0.75rem;
     border-bottom: 1px solid var(--border);
     text-align: left;
     vertical-align: top;
 }
 
 th {
-    color: var(--muted);
-    font-size: 0.78rem;
+    background: var(--ml-yellow);
+    color: var(--ml-navy);
+    font-size: 0.76rem;
+    font-weight: 700;
     letter-spacing: 0.03em;
     text-transform: uppercase;
+}
+
+tbody th {
+    width: 14rem;
+    background: var(--surface-2);
+}
+
+tbody tr:nth-child(even) td {
+    background: var(--surface-2);
 }
 
 ul,
@@ -215,15 +294,18 @@ li + li {
     margin-top: 0.45rem;
 }
 
-.verdict-malicious {
+.verdict-malicious,
+.metadata-grid .verdict-malicious {
     color: var(--danger);
 }
 
-.verdict-suspicious {
+.verdict-suspicious,
+.metadata-grid .verdict-suspicious {
     color: var(--warning);
 }
 
-.verdict-benign {
+.verdict-benign,
+.metadata-grid .verdict-benign {
     color: var(--good);
 }
 
@@ -232,14 +314,16 @@ li + li {
     gap: 0.8rem;
 }
 
+/* Blocos de código como no PDF: fundo claro e barra azul. */
 pre {
     max-height: 24rem;
     overflow: auto;
     margin: 0;
-    padding: 0.8rem;
-    border-radius: 8px;
-    background: #050b10;
-    color: #cfe8e2;
+    padding: 0.8rem 0.9rem;
+    border-left: 4px solid var(--ml-blue);
+    border-radius: 4px;
+    background: #f5f5f5;
+    color: var(--ml-navy);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
@@ -253,6 +337,10 @@ footer {
 @media (max-width: 760px) {
     .report-header {
         flex-direction: column;
+    }
+
+    .header-actions {
+        align-items: flex-start;
     }
 
     .metadata-grid,
@@ -276,20 +364,11 @@ footer {
         display: none;
     }
 
-    :root {
-        color-scheme: light;
-        --background: #ffffff;
-        --surface: #ffffff;
-        --surface-2: #f3f6f8;
-        --border: #cbd5dc;
-        --text: #111827;
-        --muted: #4b5563;
-        --accent: #087f6d;
-    }
-
     body {
         background: #ffffff;
         font-size: 10pt;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
 
     .report-shell {
@@ -297,12 +376,16 @@ footer {
         padding: 0;
     }
 
-    .report-header,
     .section,
     .metadata-grid article,
     .card,
     .evidence-item {
-        background: #ffffff;
+        box-shadow: none;
+        break-inside: avoid;
+    }
+
+    .report-header {
+        box-shadow: none;
         break-inside: avoid;
     }
 
@@ -312,7 +395,5 @@ footer {
 
     pre {
         max-height: none;
-        background: #f3f6f8;
-        color: #111827;
     }
 }

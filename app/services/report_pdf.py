@@ -35,6 +35,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as pdf_canvas
+from reportlab.platypus.doctemplate import DocIf
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
@@ -57,27 +58,31 @@ MARGIN_X = 18 * mm
 MARGIN_TOP = 24 * mm
 MARGIN_BOTTOM = 20 * mm
 CONTENT_WIDTH = PAGE_WIDTH - 2 * MARGIN_X
-COVER_BAND_HEIGHT = 78 * mm
+COVER_BAND_HEIGHT = 64 * mm
 
-NAVY = colors.HexColor("#0B1F33")
-NAVY_SOFT = colors.HexColor("#16324F")
-ACCENT = colors.HexColor("#1FA38A")
-TEXT = colors.HexColor("#1F2933")
-MUTED = colors.HexColor("#5B6B7B")
-RULE = colors.HexColor("#D9E2EC")
-ZEBRA = colors.HexColor("#F4F7FA")
-BLUF_BG = colors.HexColor("#EEF6F4")
+# Identidade visual inspirada no Mercado Livre.
+YELLOW = colors.HexColor("#FFE600")
+YELLOW_SOFT = colors.HexColor("#FFF9D6")
+NAVY = colors.HexColor("#2D3277")
+BLUE = colors.HexColor("#3483FA")
+NAVY_SOFT = BLUE
+ACCENT = BLUE
+TEXT = colors.HexColor("#333333")
+MUTED = colors.HexColor("#737373")
+RULE = colors.HexColor("#E6E6E6")
+ZEBRA = colors.HexColor("#F5F5F5")
+BLUF_BG = YELLOW_SOFT
 
 VERDICT_COLORS = {
-    "malicious": colors.HexColor("#C0392B"),
-    "suspicious": colors.HexColor("#D68910"),
-    "benign": colors.HexColor("#1E8449"),
+    "malicious": colors.HexColor("#F23D4F"),
+    "suspicious": colors.HexColor("#FF7733"),
+    "benign": colors.HexColor("#00A650"),
     "unknown": MUTED,
 }
 
 CONFIDENCE_COLORS = {
-    "high": colors.HexColor("#0B5394"),
-    "medium": colors.HexColor("#D68910"),
+    "high": BLUE,
+    "medium": colors.HexColor("#FF7733"),
     "low": MUTED,
 }
 
@@ -302,7 +307,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "code": ParagraphStyle(
             "code", parent=base, fontName="Courier", fontSize=7, leading=9,
-            textColor=colors.HexColor("#0F2A3F"),
+            textColor=NAVY,
         ),
         "rule_title": ParagraphStyle(
             "rule_title", parent=base, fontName="CTI-Bold", fontSize=9, leading=12,
@@ -310,11 +315,11 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "cell_head": ParagraphStyle(
             "cell_head", parent=base, fontName="CTI-Bold", fontSize=7.4, leading=9.5,
-            textColor=colors.white,
+            textColor=NAVY,
         ),
         "h1": ParagraphStyle(
             "h1", parent=base, fontName="CTI-Bold", fontSize=13.5, leading=17,
-            textColor=NAVY, spaceBefore=4, spaceAfter=6,
+            textColor=NAVY, spaceBefore=0, spaceAfter=0,
         ),
         "h2": ParagraphStyle(
             "h2", parent=base, fontName="CTI-Bold", fontSize=10.5, leading=14,
@@ -322,7 +327,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "eyebrow": ParagraphStyle(
             "eyebrow", parent=base, fontName="CTI-Bold", fontSize=7.2, leading=9,
-            textColor=ACCENT,
+            textColor=NAVY,
         ),
         "kpi_label": ParagraphStyle(
             "kpi_label", parent=base, fontName="CTI-Bold", fontSize=6.8, leading=8.5,
@@ -332,7 +337,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             "kpi_value", parent=base, fontName="CTI-Bold", fontSize=12, leading=15,
             textColor=NAVY,
         ),
-        "bluf": ParagraphStyle("bluf", parent=base, fontSize=9.4, leading=13.6),
+        "bluf": ParagraphStyle("bluf", parent=base, fontSize=8.8, leading=12.6),
         "bullet": ParagraphStyle(
             "bullet", parent=base, leftIndent=10, bulletIndent=0, spaceAfter=2.5,
         ),
@@ -371,7 +376,7 @@ def _table(
     )
 
     commands: list[tuple[Any, ...]] = [
-        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+        ("BACKGROUND", (0, 0), (-1, 0), YELLOW),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("TOPPADDING", (0, 0), (-1, -1), 3.5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
@@ -418,9 +423,19 @@ def _empty(message: str, styles: dict[str, ParagraphStyle]) -> Paragraph:
 
 
 def _section(number: str, title: str, styles: dict[str, ParagraphStyle]) -> list[Any]:
-    return [
-        Paragraph(f"{escape(number)}&nbsp;&nbsp;{escape(title)}", styles["h1"]),
-    ]
+    heading = Table(
+        [[Paragraph(f"{escape(number)}&nbsp;&nbsp;{escape(title)}", styles["h1"])], [""]],
+        colWidths=[CONTENT_WIDTH],
+        rowHeights=[None, 6],
+    )
+    heading.setStyle(TableStyle([
+        ("LINEBEFORE", (0, 0), (0, 0), 4, YELLOW),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    # Um único flowable: o KeepTogether de block() o mantém junto do conteúdo.
+    return [heading]
 
 
 def _format_datetime(value: Any) -> str:
@@ -494,8 +509,8 @@ def _canvas_factory(report: CTIReport):
                     f"Relatório de triagem · {report.artifact.requested_hash[:16]}…",
                 )
                 _draw_tlp_badge(self, tlp, PAGE_WIDTH - MARGIN_X, top + 1, 7)
-                self.setStrokeColor(ACCENT)
-                self.setLineWidth(1.2)
+                self.setStrokeColor(YELLOW)
+                self.setLineWidth(2)
                 self.line(MARGIN_X, top - 12, PAGE_WIDTH - MARGIN_X, top - 12)
 
             # Rodapé (inclusive na capa)
@@ -525,33 +540,35 @@ def _draw_cover_band(report: CTIReport):
     def draw(canvas: pdf_canvas.Canvas, _doc: Any) -> None:
         canvas.saveState()
         band_bottom = PAGE_HEIGHT - COVER_BAND_HEIGHT
-        canvas.setFillColor(NAVY)
+        strip = 14 * mm
+        canvas.setFillColor(YELLOW)
         canvas.rect(0, band_bottom, PAGE_WIDTH, COVER_BAND_HEIGHT, stroke=0, fill=1)
-        canvas.setFillColor(ACCENT)
-        canvas.rect(0, band_bottom, PAGE_WIDTH, 2.2, stroke=0, fill=1)
+        canvas.setFillColor(NAVY)
+        canvas.rect(0, band_bottom, PAGE_WIDTH, strip, stroke=0, fill=1)
 
-        top = PAGE_HEIGHT - 20 * mm
-        canvas.setFillColor(ACCENT)
+        top = PAGE_HEIGHT - 16 * mm
+        canvas.setFillColor(NAVY)
         canvas.setFont("CTI-Bold", 8)
         canvas.drawString(MARGIN_X, top, "CYBER THREAT INTELLIGENCE  ·  MALWARE TRIAGE")
 
-        canvas.setFillColor(colors.white)
+        canvas.setFillColor(NAVY)
         canvas.setFont("CTI-Bold", 22)
-        canvas.drawString(MARGIN_X, top - 30, "Relatório de Inteligência")
-        canvas.drawString(MARGIN_X, top - 57, "de Ameaças")
+        canvas.drawString(MARGIN_X, top - 27, "Relatório de Inteligência")
+        canvas.drawString(MARGIN_X, top - 52, "de Ameaças")
 
         canvas.setFont("Courier", 8.6)
-        canvas.setFillColor(colors.HexColor("#B8C7D6"))
-        canvas.drawString(MARGIN_X, top - 82, f"SHA-256  {report.artifact.hashes.get('sha256', report.artifact.requested_hash)}")
+        canvas.setFillColor(NAVY)
+        canvas.drawString(MARGIN_X, top - 72, f"SHA-256  {report.artifact.hashes.get('sha256', report.artifact.requested_hash)}")
 
         canvas.setFont("CTI", 8)
+        canvas.setFillColor(colors.white)
         canvas.drawString(
             MARGIN_X,
-            top - 97,
+            band_bottom + strip / 2 - 2.8,
             f"{report.report_id}   ·   {_format_datetime(report.generated_at)}",
         )
 
-        _draw_tlp_badge(canvas, report.classification, PAGE_WIDTH - MARGIN_X, PAGE_HEIGHT - 16 * mm, 9)
+        _draw_tlp_badge(canvas, report.classification, PAGE_WIDTH - MARGIN_X, PAGE_HEIGHT - 12 * mm, 9)
         canvas.restoreState()
 
     return draw
@@ -604,8 +621,8 @@ def _kpi_tiles(report: CTIReport, styles: dict[str, ParagraphStyle]) -> Table:
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
         ("LINEAFTER", (0, 0), (-2, -1), 3, colors.white),
     ]
-    for index, (_label, _value, color) in enumerate(tiles):
-        commands.append(("LINEABOVE", (index, 0), (index, 0), 2.4, color))
+    for index in range(len(tiles)):
+        commands.append(("LINEABOVE", (index, 0), (index, 0), 3, YELLOW))
     table.setStyle(TableStyle(commands))
     return table
 
@@ -668,7 +685,7 @@ def _bluf_box(report: CTIReport, styles: dict[str, ParagraphStyle]) -> Table:
     table = Table([[content]], colWidths=[CONTENT_WIDTH])
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), BLUF_BG),
-        ("LINEBEFORE", (0, 0), (0, -1), 3, ACCENT),
+        ("LINEBEFORE", (0, 0), (0, -1), 4, YELLOW),
         ("TOPPADDING", (0, 0), (-1, -1), 8),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
         ("LEFTPADDING", (0, 0), (-1, -1), 10),
@@ -1292,7 +1309,9 @@ def render_cti_report_pdf(report: CTIReport) -> bytes:
         # Qualquer página após a capa (inclusive transbordo) usa o corpo.
         NextPageTemplate("body"),
         *_cover(report, styles),
-        PageBreak(),
+        Spacer(1, 12),
+        # Só quebra se a capa coube na página 1; se transbordou, segue direto.
+        DocIf("doc.page == 1", [PageBreak()]),
     ]
 
     for builder in (
