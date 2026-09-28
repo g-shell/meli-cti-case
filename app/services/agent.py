@@ -39,6 +39,12 @@ from app.models import (
     AnalysisExecution,
     GenAIUsage,
 )
+from app.services.context_filters import (
+    detect_artifact_platform,
+    incompatible_evidence_ids,
+    has_clean_reputation,
+    is_known_infrastructure,
+)
 from app.services.deterministic import (
     build_deterministic_analysis,
 )
@@ -139,9 +145,25 @@ Regras obrigatórias:
 7. A ausência de resultado em um provedor não significa
    que a amostra é benigna.
 
-8. Retorne exclusivamente o schema estruturado solicitado.
+8. Considere a plataforma do arquivo (Mach-O, PE, ELF).
+   Sandboxes executam amostras em ambientes incompatíveis;
+   comandos, APIs e caminhos de outra plataforma são ruído
+   e não sustentam TTPs.
 
-9. Produza o conteúdo em português técnico e objetivo.
+9. IPs e domínios de fornecedores de SO e CDNs (Apple,
+   Microsoft, Akamai, Fastly) marcados em
+   known_infrastructure não são candidatos a C2.
+
+10. Evidências related_family_label rotulam artefatos da
+    cadeia (pai que dropou a amostra ou arquivos dropados).
+    Use-as para corroborar ou contextualizar o ecossistema,
+    nunca como prova única da família da amostra. Quando
+    rótulos da amostra e da cadeia divergirem, apresente
+    as hipóteses concorrentes e justifique a escolha.
+
+11. Retorne exclusivamente o schema estruturado solicitado.
+
+12. Produza o conteúdo em português técnico e objetivo.
 """.strip()
 
 FAMILY_EVIDENCE_KINDS = {
@@ -149,6 +171,7 @@ FAMILY_EVIDENCE_KINDS = {
     "signature",
     "vendor_intel",
     "yara_match",
+    "related_family_label",
 }
 
 BEHAVIOR_EVIDENCE_KINDS = {
@@ -1043,7 +1066,19 @@ class TriageWorkflow:
             grounded_candidates
         )
 
+        artifact_platform = detect_artifact_platform(
+            evidence
+        )
+
+        # Evidências de outra plataforma são ruído de sandbox
+        # (ex.: Mach-O aberto num Windows) e não sustentam TTPs.
+        cross_platform_ids = incompatible_evidence_ids(
+            evidence,
+            artifact_platform,
+        )
+
         grounded_ttps = []
+        dropped_ttps: list[str] = []
 
         for ttp in analysis.ttps:
             ttp.evidence_ids = [
@@ -1052,6 +1087,8 @@ class TriageWorkflow:
                 in ttp.evidence_ids
                 if (
                     evidence_id in valid_ids
+                    and evidence_id
+                    not in cross_platform_ids
                     and evidence_by_id[
                         evidence_id
                     ].kind
@@ -1061,14 +1098,39 @@ class TriageWorkflow:
 
             if ttp.evidence_ids:
                 grounded_ttps.append(ttp)
+            else:
+                dropped_ttps.append(
+                    ttp.technique_id
+                )
 
         analysis.ttps = grounded_ttps
 
-        known_network_observables = {
+        if cross_platform_ids and artifact_platform:
+            caveat = (
+                f"A amostra tem como alvo {artifact_platform}; "
+                f"{len(cross_platform_ids)} evidência(s) de "
+                "sandbox de outra plataforma foram tratadas "
+                "como ruído e não sustentam TTPs"
+            )
+
+            if dropped_ttps:
+                caveat += (
+                    " (descartadas: "
+                    + ", ".join(
+                        dict.fromkeys(dropped_ttps)
+                    )
+                    + ")"
+                )
+
+            analysis.analytic_caveats.append(
+                caveat + "."
+            )
+
+        network_observables = {
             (
                 observable.type,
                 observable.value.casefold(),
-            )
+            ): observable
             for observable in observables
             if observable.type
             in {
@@ -1078,20 +1140,49 @@ class TriageWorkflow:
             }
         }
 
-        analysis.c2_assessment = [
-            observable.model_copy(
-                update={
-                    "confidence": "medium",
-                }
+        grounded_c2 = []
+        known_infrastructure: list[str] = []
+
+        for candidate in analysis.c2_assessment:
+            collected = network_observables.get(
+                (
+                    candidate.type,
+                    candidate.value.casefold(),
+                )
             )
-            for observable
-            in analysis.c2_assessment
-            if (
-                observable.type,
-                observable.value.casefold(),
+
+            if collected is None:
+                continue
+
+            if is_known_infrastructure(collected):
+                known_infrastructure.append(
+                    collected.value
+                )
+                continue
+
+            grounded_c2.append(
+                candidate.model_copy(
+                    update={
+                        "confidence": (
+                            "low"
+                            if has_clean_reputation(
+                                collected
+                            )
+                            else "medium"
+                        ),
+                    }
+                )
             )
-            in known_network_observables
-        ]
+
+        analysis.c2_assessment = grounded_c2
+
+        if known_infrastructure:
+            analysis.analytic_caveats.append(
+                "Removidos da avaliação de C2 por pertencerem "
+                "a fornecedores de SO/CDN conhecidos: "
+                + ", ".join(known_infrastructure)
+                + "."
+            )
 
         severity = {
             "benign": 0,

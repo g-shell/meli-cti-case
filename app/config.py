@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5-mini"
     request_timeout_seconds: float = 30.0
     max_relationship_items: int = 20
+    enrichment_cache_ttl_hours: int = 24
     enable_genai: bool = True
 
     genai_provider: Literal[

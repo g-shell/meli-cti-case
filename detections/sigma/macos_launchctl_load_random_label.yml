@@ -1,0 +1,32 @@
+title: Launchctl Carregando LaunchAgent com Label Aleatório
+id: 1b7e4c9a-3f2d-4a86-a5e1-8c0d7f6b2e93
+status: experimental
+description: |
+    Detecta launchctl load/bootstrap de plist com o padrão com.<usuário>.<16 letras minúsculas>.plist,
+    iniciado por shell. Complementa a regra genérica "Launch Agent/Daemon Execution Via Launchctl"
+    (acionada no VirusTotal para esta amostra) com o padrão de nome da família, reduzindo ruído.
+references:
+    - https://attack.mitre.org/techniques/T1543/001/
+author: MELI CTI
+date: 2026-09-27
+tags:
+    - attack.persistence
+    - attack.execution
+    - attack.t1543.001
+    - attack.t1059.004
+logsource:
+    product: macos
+    category: process_creation
+detection:
+    selection_launchctl:
+        Image|endswith: '/launchctl'
+        CommandLine|contains:
+            - ' load '
+            - ' bootstrap '
+    selection_label:
+        # Regex de ponta a ponta: Lucene/EQL exigem casamento da string inteira.
+        CommandLine|re: '.*LaunchAgents/com\.[A-Za-z0-9_.-]{1,64}\.[a-z]{16}\.plist.*'
+    condition: all of selection_*
+falsepositives:
+    - Desconhecidos; labels legítimos raramente usam 16 letras aleatórias.
+level: high

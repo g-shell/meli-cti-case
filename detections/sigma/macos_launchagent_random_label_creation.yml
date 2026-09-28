@@ -1,0 +1,32 @@
+title: LaunchAgent com Nome Aleatório Criado por Binário em Diretório de Usuário
+id: 6d0f3b2e-8c1a-4e57-9b3c-2f6a1d9e7c41
+status: experimental
+description: |
+    Detecta a criação de um plist em LaunchAgents com o padrão com.<usuário>.<16 letras minúsculas>.plist
+    por processo executado a partir de diretório gravável pelo usuário. Padrão observado no dropper
+    macOS do ecossistema AMOS/MacSync (apps.bin) distribuído via ClearFake.
+references:
+    - https://attack.mitre.org/techniques/T1543/001/
+author: MELI CTI
+date: 2026-09-27
+tags:
+    - attack.persistence
+    - attack.t1543.001
+logsource:
+    product: macos
+    category: file_event
+detection:
+    selection_path:
+        # Regex de ponta a ponta: Lucene/EQL exigem casamento da string inteira.
+        TargetFilename|re: '.*/Library/LaunchAgents/com\.[A-Za-z0-9_.-]{1,64}\.[a-z]{16}\.plist'
+    selection_writer:
+        Image|startswith:
+            - '/Users/'
+            - '/tmp/'
+            - '/private/tmp/'
+            - '/private/var/folders/'
+            - '/Volumes/'
+    condition: all of selection_*
+falsepositives:
+    - Ferramentas internas não assinadas que geram labels aleatórios (raro). Criar exceção por hash ou Team ID.
+level: high

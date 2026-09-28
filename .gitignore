@@ -9,3 +9,4 @@ data/*.db
 data/*.sqlite*
 data/*.csv
 cti-triage-*.zip
+data/*.db-*

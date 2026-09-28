@@ -251,6 +251,15 @@ button.secondary {
     grid-template-columns: minmax(0, 1fr) 12rem auto;
 }
 
+#enrich-form {
+    grid-template-columns: 9rem minmax(0, 1fr) auto auto;
+    align-items: center;
+}
+
+#enrich-form .check {
+    white-space: nowrap;
+}
+
 .table-container {
     overflow-x: auto;
     margin-top: 1rem;
@@ -324,7 +333,8 @@ footer {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .inline-form {
+    .inline-form,
+    #enrich-form {
         grid-template-columns: 1fr;
     }
 }

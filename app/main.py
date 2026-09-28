@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes import router
 from app.config import Settings, get_settings
 from app.services.agent import TriageWorkflow
+from app.services.enrichment import IndicatorEnricher
 from app.services.storage import TriageRepository
 
 
@@ -21,6 +22,7 @@ def create_app(
     settings: Settings | None = None,
     workflow: TriageWorkflow | None = None,
     repository: TriageRepository | None = None,
+    enricher: IndicatorEnricher | None = None,
 ) -> FastAPI:
     """Application factory utilizada em produção e nos testes."""
 
@@ -64,6 +66,14 @@ def create_app(
     application.state.settings = resolved_settings
     application.state.repository = resolved_repository
     application.state.workflow = resolved_workflow
+    application.state.enricher = (
+        enricher
+        if enricher is not None
+        else IndicatorEnricher(
+            settings=resolved_settings,
+            repository=resolved_repository,
+        )
+    )
 
     application.mount(
         "/static",

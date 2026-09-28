@@ -284,3 +284,101 @@ def test_records_failed_provider_as_evidence():
     )
 
     assert features["family_signals"] == []
+
+def test_chain_signals_are_graded_below_sample_labels():
+    """
+    Reproduz o caso: amostra rotulada stealer/phebot, payload
+    dropado rotulado macsync/phebot e pai rotulado AMOS.
+    """
+    vt_result = ProviderResult(
+        provider="virustotal",
+        status="ok",
+        data={
+            "report": {
+                "data": {
+                    "id": "a" * 64,
+                    "attributes": {
+                        "type_description": "Mach-O",
+                        "last_analysis_stats": {"malicious": 33},
+                        "popular_threat_classification": {
+                            "suggested_threat_label": (
+                                "trojan.stealer/phebot"
+                            ),
+                        },
+                    },
+                }
+            },
+            "related": {
+                "dropped_files": {
+                    "available": True,
+                    "payload": {
+                        "data": [
+                            {
+                                "id": "e" * 64,
+                                "attributes": {
+                                    "popular_threat_classification": {
+                                        "suggested_threat_label": (
+                                            "trojan.macsync/phebot"
+                                        ),
+                                    },
+                                },
+                            }
+                        ]
+                    },
+                }
+            },
+        },
+    )
+    mb_result = ProviderResult(
+        provider="malwarebazaar",
+        status="ok",
+        data={
+            "query_status": "ok",
+            "data": [
+                {
+                    "sha256_hash": "a" * 64,
+                    "signature": None,
+                    "tags": ["macho"],
+                }
+            ],
+            "related": {
+                "dropped_by": {
+                    "available": True,
+                    "sha256": "b" * 64,
+                    "sample": {
+                        "signature": "AMOS",
+                        "file_type": "sh",
+                        "tags": ["AMOS", "sh"],
+                    },
+                }
+            },
+        },
+    )
+
+    _, evidence, features = normalize_providers(
+        [vt_result, mb_result]
+    )
+
+    related = [
+        item.value
+        for item in evidence
+        if item.kind == "related_family_label"
+    ]
+    assert {item["relation"] for item in related} == {
+        "dropped_file",
+        "dropped_by",
+    }
+
+    by_family = {
+        item["family"]: item
+        for item in family_consensus(features)
+    }
+
+    # Categorias funcionais não viram família.
+    assert "stealer" not in by_family
+
+    assert by_family["phebot"]["confidence"] == "medium"
+    assert by_family["phebot"]["primary_sources"] == ["virustotal"]
+    assert by_family["macsync"]["confidence"] == "low"
+    assert by_family["amos"]["confidence"] == "low"
+    assert by_family["amos"]["related_sources"] == ["malwarebazaar"]

@@ -247,3 +247,58 @@ def test_malwarebazaar_only_is_suspicious():
 
     assert analysis.verdict == "suspicious"
     assert analysis.confidence == "medium"
+
+def test_macos_launch_agent_behaviors_are_mapped():
+    providers = [
+        ProviderResult(
+            provider="virustotal",
+            status="ok",
+        ),
+    ]
+
+    evidence = [
+        Evidence(
+            id="E001",
+            source="virustotal",
+            kind="detection_stats",
+            value={"malicious": 33, "undetected": 30},
+        ),
+    ]
+
+    features = {
+        "family_signals": [],
+        "commands": [
+            {
+                "value": (
+                    "sh -c launchctl load ~/Library/LaunchAgents/"
+                    "com.root.gfskjsnghdjsvuxj.plist"
+                ),
+                "evidence_id": "E009",
+            },
+        ],
+        "files_written": [
+            {
+                "value": (
+                    "/private/var/root/Library/LaunchAgents/"
+                    "com.root.gfskjsnghdjsvuxj.plist"
+                ),
+                "evidence_id": "E036",
+            },
+        ],
+        "registry_keys": [],
+    }
+
+    analysis = build_deterministic_analysis(
+        providers,
+        [],
+        evidence,
+        features,
+    )
+
+    by_id = {
+        item.technique_id: item
+        for item in analysis.ttps
+    }
+
+    assert set(by_id) == {"T1543.001", "T1059.004"}
+    assert by_id["T1543.001"].evidence_ids == ["E009", "E036"]

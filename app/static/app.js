@@ -136,6 +136,7 @@ function renderResult(result) {
     });
 
     addAction(actions, "Relatório HTML", `/api/v1/scans/${result.scan_id}/report/html`);
+    addAction(actions, "Relatório PDF", `/api/v1/scans/${result.scan_id}/report/pdf`);
     addAction(actions, "Relatório JSON", `/api/v1/scans/${result.scan_id}/report`);
     addAction(actions, "Exportar CSV", `/api/v1/scans/${result.scan_id}/export.csv`);
     addAction(actions, "Resultado bruto", `/api/v1/scans/${result.scan_id}`);
@@ -312,6 +313,113 @@ byId("observable-form").addEventListener("submit", async (event) => {
     } catch (error) {
         container.replaceChildren(
             makeElement("p", `Falha na busca: ${error.message}`, "status error"),
+        );
+    }
+});
+
+function renderEnrichment(result) {
+    const container = byId("enrich-results");
+    container.replaceChildren();
+
+    const summary = makeElement("div", null, "result-grid");
+    const reputation = result.reputation || {};
+    const cards = [
+        ["Veredito", result.verdict],
+        ["Detecções", `${reputation.malicious || 0} mal. / ${reputation.suspicious || 0} susp.`],
+        ["Infra conhecida", result.known_infrastructure || "não"],
+        ["Fonte", result.cached ? "cache local" : "VirusTotal ao vivo"],
+    ];
+
+    if (result.indicator_type === "ip") {
+        cards.push(
+            ["ASN", result.asn ? `AS${result.asn}` : "—"],
+            ["Operador", result.as_owner || "—"],
+            ["País", result.country || "—"],
+            ["Rede", result.network || "—"],
+        );
+    } else {
+        cards.push(
+            ["Registrar", result.registrar || "—"],
+            ["Criação", formatDate(result.creation_date)],
+        );
+    }
+
+    cards.forEach(([label, value]) => {
+        const card = makeElement("article", null, "result-card metric");
+        card.appendChild(makeElement("span", label));
+        card.appendChild(makeElement("strong", value));
+        summary.appendChild(card);
+    });
+
+    container.appendChild(summary);
+
+    const addTable = (title, headers, rows) => {
+        if (!rows.length) {
+            return;
+        }
+
+        const section = makeElement("section", null, "result-details-section");
+        section.appendChild(makeElement("h3", title));
+        const wrapper = makeElement("div", null, "table-container");
+        wrapper.appendChild(makeTable(headers, rows));
+        section.appendChild(wrapper);
+        container.appendChild(section);
+    };
+
+    addTable(
+        "Resoluções passivas",
+        ["Última resolução", result.indicator_type === "ip" ? "Domínio" : "IP"],
+        (result.resolutions || []).map((item) => [
+            formatDate(item.last_resolved),
+            item.value,
+        ]),
+    );
+
+    addTable(
+        "Registros DNS",
+        ["Tipo", "Valor"],
+        (result.dns_records || []).map((item) => [item.type, item.value]),
+    );
+
+    addTable(
+        "Categorias",
+        ["Fornecedor", "Categoria"],
+        Object.entries(result.categories || {}),
+    );
+
+    addTable(
+        "Avistamentos no histórico local",
+        ["Data", "Scan", "Hash", "Relação"],
+        (result.local_sightings || []).map((item) => [
+            formatDate(item.created_at),
+            item.scan_id,
+            item.requested_hash,
+            item.observable.relationship || "—",
+        ]),
+    );
+}
+
+byId("enrich-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const container = byId("enrich-results");
+    const type = byId("enrich-type").value;
+    const value = byId("enrich-value").value.trim();
+    const query = new URLSearchParams();
+
+    if (byId("enrich-refresh").checked) {
+        query.set("force_refresh", "true");
+    }
+
+    container.replaceChildren(makeElement("p", "Consultando...", "muted"));
+
+    try {
+        const result = await requestJson(
+            `/api/v1/enrich/${type}/${encodeURIComponent(value)}?${query}`,
+        );
+        renderEnrichment(result);
+    } catch (error) {
+        container.replaceChildren(
+            makeElement("p", `Falha no enriquecimento: ${error.message}`, "status error"),
         );
     }
 });

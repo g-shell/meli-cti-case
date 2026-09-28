@@ -10,6 +10,9 @@ from app.models import (
     ObservableType,
     ProviderResult,
 )
+from app.services.context_filters import (
+    known_infrastructure_owner,
+)
 
 
 FAMILY_NOISE = {
@@ -32,6 +35,16 @@ FAMILY_NOISE = {
     "gen",
     "macos",
     "osx",
+    # Categorias funcionais, não nomes de família.
+    "stealer",
+    "infostealer",
+    "dropper",
+    "downloader",
+    "loader",
+    "psw",
+    "script",
+    "shell",
+    "txt",
     "linux",
     "android",
     "x86",
@@ -203,6 +216,74 @@ def _relationship_observables(
             )
 
     return output
+
+
+def _dropped_file_family_signals(
+    related: dict[str, Any],
+    builder: EvidenceBuilder,
+    features: dict[str, Any],
+) -> None:
+    """
+    Registra o rótulo de família dos arquivos dropados.
+
+    São sinais de cadeia (scope=related): corroboram, mas não
+    identificam sozinhos, a família da amostra principal.
+    """
+
+    payload = _get_enrichment_payload(
+        related,
+        "dropped_files",
+    )
+
+    rows = payload.get("data", [])
+
+    if not isinstance(rows, list):
+        return
+
+    for item in rows[:20]:
+        if not isinstance(item, dict):
+            continue
+
+        attributes = item.get("attributes", {})
+
+        if not isinstance(attributes, dict):
+            continue
+
+        classification = attributes.get(
+            "popular_threat_classification"
+        )
+
+        if not isinstance(classification, dict):
+            continue
+
+        label = classification.get(
+            "suggested_threat_label"
+        )
+
+        if not label:
+            continue
+
+        evidence_id = builder.add(
+            source="virustotal",
+            kind="related_family_label",
+            value={
+                "relation": "dropped_file",
+                "sha256": item.get("id"),
+                "label": str(label),
+                "popular_threat_name": classification.get(
+                    "popular_threat_name"
+                ),
+            },
+        )
+
+        features["family_signals"].append(
+            {
+                "family": str(label),
+                "source": "virustotal",
+                "evidence_id": evidence_id,
+                "scope": "related",
+            }
+        )
 
 
 def _behaviour_observables(
@@ -460,6 +541,12 @@ def _normalize_virustotal(
         )
     )
 
+    _dropped_file_family_signals(
+        related,
+        builder,
+        features,
+    )
+
     observables.extend(
         _behaviour_observables(
             related
@@ -638,6 +725,45 @@ def _normalize_malwarebazaar(
             }
         )
 
+    related = provider.data.get("related", {})
+    parent = (
+        related.get("dropped_by")
+        if isinstance(related, dict)
+        else None
+    )
+
+    if (
+        isinstance(parent, dict)
+        and parent.get("available") is True
+        and isinstance(parent.get("sample"), dict)
+    ):
+        parent_sample = parent["sample"]
+        parent_signature = parent_sample.get("signature")
+
+        evidence_id = builder.add(
+            source="malwarebazaar",
+            kind="related_family_label",
+            value={
+                "relation": "dropped_by",
+                "sha256": parent.get("sha256"),
+                "label": parent_signature,
+                "file_name": parent_sample.get("file_name"),
+                "file_type": parent_sample.get("file_type"),
+                "tags": parent_sample.get("tags"),
+                "first_seen": parent_sample.get("first_seen"),
+            },
+        )
+
+        if parent_signature:
+            features["family_signals"].append(
+                {
+                    "family": str(parent_signature),
+                    "source": "malwarebazaar",
+                    "evidence_id": evidence_id,
+                    "scope": "related",
+                }
+            )
+
     vendor_intel = row.get(
         "vendor_intel",
         {},
@@ -749,6 +875,14 @@ def normalize_providers(
             evidence_id
         )
 
+        owner = known_infrastructure_owner(
+            observable.type,
+            observable.value,
+        )
+
+        if owner:
+            context["known_infrastructure"] = owner
+
         deduplicated.append(
             observable.model_copy(
                 update={
@@ -789,6 +923,15 @@ def family_consensus(
 ) -> list[dict[str, Any]]:
     """
     Agrupa sinais de famílias por fontes independentes.
+
+    Sinais "primary" rotulam a própria amostra; sinais "related"
+    rotulam artefatos da cadeia (pai que a dropou, arquivos que
+    ela dropou). Critério de confiança:
+
+    - high: rótulo da amostra em 2+ provedores independentes;
+    - medium: rótulo da amostra corroborado pela cadeia, ou
+      rótulo de cadeia presente em 2+ provedores;
+    - low: fonte única ou apenas um sinal de cadeia.
     """
 
     signals = features.get(
@@ -803,10 +946,8 @@ def family_consensus(
         list[str],
     ] = {}
 
-    sources_by_token: dict[
-        str,
-        set[str],
-    ] = {}
+    primary_sources: dict[str, set[str]] = {}
+    related_sources: dict[str, set[str]] = {}
 
     for signal in signals:
         if not isinstance(signal, dict):
@@ -831,6 +972,12 @@ def family_consensus(
         ):
             continue
 
+        scope_sources = (
+            related_sources
+            if signal.get("scope") == "related"
+            else primary_sources
+        )
+
         unique_tokens = dict.fromkeys(
             tokenize_family(family)
         )
@@ -845,7 +992,7 @@ def family_consensus(
                 evidence_id
             )
 
-            sources_by_token.setdefault(
+            scope_sources.setdefault(
                 token,
                 set(),
             ).add(
@@ -857,19 +1004,20 @@ def family_consensus(
     ] = []
 
     for token, signal_count in counter.most_common(5):
-        sources = sources_by_token[
-            token
-        ]
+        primary = primary_sources.get(token, set())
+        related = related_sources.get(token, set())
 
-        independent_sources = len(
-            sources
-        )
+        independent_sources = len(primary)
 
-        confidence = (
-            "high"
-            if independent_sources >= 2
-            else "low"
-        )
+        if independent_sources >= 2:
+            confidence = "high"
+        elif (
+            (primary and related)
+            or len(related) >= 2
+        ):
+            confidence = "medium"
+        else:
+            confidence = "low"
 
         output.append(
             {
@@ -883,8 +1031,15 @@ def family_consensus(
                     )
                 ),
                 "independent_sources": independent_sources,
+                "primary_sources": sorted(primary),
+                "related_sources": sorted(related),
                 "signal_count": signal_count,
             }
         )
+
+    rank = {"high": 0, "medium": 1, "low": 2}
+
+    # Estável: mantém a ordem por contagem dentro do mesmo nível.
+    output.sort(key=lambda item: rank[item["confidence"]])
 
     return output
